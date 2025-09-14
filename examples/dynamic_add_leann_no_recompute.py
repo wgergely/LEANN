@@ -204,8 +204,8 @@ def add_incremental(
         )
 
     # Resolve embedding config from meta if not provided
-    emb_model = embedding_model or meta.get("embedding_model", "facebook/contriever")
-    emb_mode = embedding_mode or meta.get("embedding_mode", "sentence-transformers")
+    embedding_model or meta.get("embedding_model", "facebook/contriever")
+    embedding_mode or meta.get("embedding_mode", "sentence-transformers")
 
     documents = _load_documents(add_dir, required_exts=file_types)
     if not documents:
@@ -248,52 +248,15 @@ def add_incremental(
 
     # Compute embeddings for new texts
     print("Computing embeddings for incremental chunks...")
-    from leann.api import compute_embeddings
+    from leann.api import incremental_add_texts
 
-    embeddings = compute_embeddings(
+    # Let core handle embeddings and vector index update
+    added = incremental_add_texts(
+        str(index_path),
         new_texts,
-        model_name=emb_model,
-        mode=emb_mode,
-        use_server=False,
-        is_build=True,
     )
 
-    # Load FAISS HNSW index and add vectors, then write back
-    print("Loading HNSW index and appending vectors...")
-    try:
-        from leann_backend_hnsw import faiss as hnsw_faiss  # type: ignore
-    except Exception as e:  # pragma: no cover - environment-specific
-        raise RuntimeError(
-            "Failed to import leann_backend_hnsw.faiss. Ensure backend is built/installed."
-        ) from e
-
-    # Read existing index
-    # Read existing index (basic read is sufficient for appending)
-    index = hnsw_faiss.read_index(str(faiss_index_file), hnsw_faiss.IO_FLAG_MMAP)
-
-    # Normalize for cosine if needed
-    distance_metric = meta.get("backend_kwargs", {}).get("distance_metric", "mips").lower()
-    if distance_metric == "cosine":
-        import numpy as _np
-
-        norms = _np.linalg.norm(embeddings, axis=1, keepdims=True)
-        norms[norms == 0] = 1
-        embeddings = embeddings / norms
-
-    # Ensure dtype float32 and contiguous
-    import numpy as _np
-
-    if embeddings.dtype != _np.float32:
-        embeddings = embeddings.astype(_np.float32)
-    if not embeddings.flags.c_contiguous:
-        embeddings = _np.ascontiguousarray(embeddings, dtype=_np.float32)
-
-    # Append using FAISS-style signature (n, swig_ptr(x)); fall back to Python wrapper if needed
-    index.add(embeddings.shape[0], hnsw_faiss.swig_ptr(embeddings))
-
-    hnsw_faiss.write_index(index, str(faiss_index_file))
-
-    print(f"Incremental add completed. Index updated at: {index_path}")
+    print(f"Incremental add completed. Added {added} chunks. Index: {index_path}")
     return str(index_path)
 
 
