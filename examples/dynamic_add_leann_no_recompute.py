@@ -289,11 +289,8 @@ def add_incremental(
         embeddings = _np.ascontiguousarray(embeddings, dtype=_np.float32)
 
     # Append using FAISS-style signature (n, swig_ptr(x)); fall back to Python wrapper if needed
-    try:
-        index.add(embeddings.shape[0], hnsw_faiss.swig_ptr(embeddings))
-    except TypeError:
-        # Some builds expose a Python-friendly signature: index.add(np.ndarray)
-        index.add(embeddings)
+    index.add(embeddings.shape[0], hnsw_faiss.swig_ptr(embeddings))
+
     hnsw_faiss.write_index(index, str(faiss_index_file))
 
     print(f"Incremental add completed. Index updated at: {index_path}")
