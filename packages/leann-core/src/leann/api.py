@@ -730,6 +730,7 @@ class LeannBuilder:
         index = faiss.read_index(str(index_file))
         if hasattr(index, "is_recompute"):
             index.is_recompute = needs_recompute
+            print(f"index.is_recompute: {index.is_recompute}")
         if getattr(index, "storage", None) is None:
             if index.metric_type == faiss.METRIC_INNER_PRODUCT:
                 storage_index = faiss.IndexFlatIP(index.d)
@@ -818,7 +819,12 @@ class LeannBuilder:
                             f"{actual_port}; expected {requested_zmq_port}. Make sure the desired ZMQ port is free."
                         )
 
-                index.add(embeddings.shape[0], faiss.swig_ptr(embeddings))
+                if needs_recompute:
+                    for i in range(embeddings.shape[0]):
+                        print(f"add {i} embeddings")
+                        index.add(1, faiss.swig_ptr(embeddings[i : i + 1]))
+                else:
+                    index.add(embeddings.shape[0], faiss.swig_ptr(embeddings))
                 faiss.write_index(index, str(index_file))
             finally:
                 if server_started and server_manager is not None:
