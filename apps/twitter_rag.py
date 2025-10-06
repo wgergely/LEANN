@@ -19,59 +19,57 @@ from apps.twitter_data.twitter_mcp_reader import TwitterMCPReader
 class TwitterMCPRAG(BaseRAGExample):
     """
     RAG application for Twitter bookmarks via MCP servers.
-    
+
     This class provides a complete RAG pipeline for Twitter bookmark data, including
     MCP server connection, data fetching, indexing, and interactive chat.
     """
-    
+
     def __init__(self):
         super().__init__()
         self.default_index_name = "twitter_bookmarks"
-        
+
     def _add_specific_arguments(self, parser: argparse.ArgumentParser):
         """Add Twitter MCP-specific arguments."""
         parser.add_argument(
             "--mcp-server",
             type=str,
             required=True,
-            help="Command to start the Twitter MCP server (e.g., 'twitter-mcp-server' or 'npx twitter-mcp-server')"
+            help="Command to start the Twitter MCP server (e.g., 'twitter-mcp-server' or 'npx twitter-mcp-server')",
         )
-        
+
         parser.add_argument(
-            "--username",
-            type=str,
-            help="Twitter username to filter bookmarks (without @)"
+            "--username", type=str, help="Twitter username to filter bookmarks (without @)"
         )
-        
+
         parser.add_argument(
             "--max-bookmarks",
             type=int,
             default=1000,
-            help="Maximum number of bookmarks to fetch (default: 1000)"
+            help="Maximum number of bookmarks to fetch (default: 1000)",
         )
-        
+
         parser.add_argument(
             "--no-tweet-content",
             action="store_true",
-            help="Exclude tweet content, only include metadata"
+            help="Exclude tweet content, only include metadata",
         )
-        
+
         parser.add_argument(
             "--no-metadata",
             action="store_true",
-            help="Exclude engagement metadata (likes, retweets, etc.)"
+            help="Exclude engagement metadata (likes, retweets, etc.)",
         )
-        
+
         parser.add_argument(
             "--test-connection",
             action="store_true",
-            help="Test MCP server connection and list available tools without indexing"
+            help="Test MCP server connection and list available tools without indexing",
         )
-        
+
     async def test_mcp_connection(self, args) -> bool:
         """Test the MCP server connection and display available tools."""
         print(f"Testing connection to MCP server: {args.mcp_server}")
-        
+
         try:
             reader = TwitterMCPReader(
                 mcp_server_command=args.mcp_server,
@@ -80,27 +78,31 @@ class TwitterMCPRAG(BaseRAGExample):
                 include_metadata=not args.no_metadata,
                 max_bookmarks=args.max_bookmarks,
             )
-            
+
             async with reader:
                 tools = await reader.list_available_tools()
-                
-                print(f"\n✅ Successfully connected to MCP server!")
+
+                print("\n✅ Successfully connected to MCP server!")
                 print(f"Available tools ({len(tools)}):")
-                
+
                 for i, tool in enumerate(tools, 1):
                     name = tool.get("name", "Unknown")
                     description = tool.get("description", "No description available")
                     print(f"\n{i}. {name}")
-                    print(f"   Description: {description[:100]}{'...' if len(description) > 100 else ''}")
-                    
+                    print(
+                        f"   Description: {description[:100]}{'...' if len(description) > 100 else ''}"
+                    )
+
                     # Show input schema if available
                     schema = tool.get("inputSchema", {})
                     if schema.get("properties"):
                         props = list(schema["properties"].keys())[:3]  # Show first 3 properties
-                        print(f"   Parameters: {', '.join(props)}{'...' if len(schema['properties']) > 3 else ''}")
-                
+                        print(
+                            f"   Parameters: {', '.join(props)}{'...' if len(schema['properties']) > 3 else ''}"
+                        )
+
                 return True
-                
+
         except Exception as e:
             print(f"\n❌ Failed to connect to MCP server: {e}")
             print("\nTroubleshooting tips:")
@@ -110,18 +112,18 @@ class TwitterMCPRAG(BaseRAGExample):
             print("4. Verify your Twitter account has bookmarks to fetch")
             print("5. Try running the MCP server command directly to test it")
             return False
-            
+
     async def load_data(self, args) -> list[str]:
         """Load Twitter bookmarks via MCP server."""
         print(f"Connecting to Twitter MCP server: {args.mcp_server}")
-        
+
         if args.username:
             print(f"Username filter: @{args.username}")
-            
+
         print(f"Max bookmarks: {args.max_bookmarks}")
         print(f"Include tweet content: {not args.no_tweet_content}")
         print(f"Include metadata: {not args.no_metadata}")
-        
+
         try:
             reader = TwitterMCPReader(
                 mcp_server_command=args.mcp_server,
@@ -130,9 +132,9 @@ class TwitterMCPRAG(BaseRAGExample):
                 include_metadata=not args.no_metadata,
                 max_bookmarks=args.max_bookmarks,
             )
-            
+
             texts = await reader.read_twitter_bookmarks()
-            
+
             if not texts:
                 print("❌ No bookmarks found! This could mean:")
                 print("- You don't have any bookmarks on Twitter")
@@ -140,19 +142,19 @@ class TwitterMCPRAG(BaseRAGExample):
                 print("- Authentication issues with Twitter API")
                 print("- The username filter didn't match any bookmarks")
                 return []
-                
+
             print(f"✅ Successfully loaded {len(texts)} bookmarks from Twitter")
-            
+
             # Show sample of what was loaded
             if texts:
                 sample_text = texts[0][:300] + "..." if len(texts[0]) > 300 else texts[0]
-                print(f"\nSample bookmark:")
+                print("\nSample bookmark:")
                 print("-" * 50)
                 print(sample_text)
                 print("-" * 50)
-                
+
             return texts
-            
+
         except Exception as e:
             print(f"❌ Error loading Twitter bookmarks: {e}")
             print("\nThis might be due to:")
@@ -161,19 +163,21 @@ class TwitterMCPRAG(BaseRAGExample):
             print("- Network connectivity issues")
             print("- Rate limiting from Twitter API")
             raise
-            
+
     async def run(self):
         """Main entry point with MCP connection testing."""
         args = self.parser.parse_args()
-        
+
         # Test connection if requested
         if args.test_connection:
             success = await self.test_mcp_connection(args)
             if not success:
                 return
-            print(f"\n🎉 MCP server is working! You can now run without --test-connection to start indexing.")
+            print(
+                "\n🎉 MCP server is working! You can now run without --test-connection to start indexing."
+            )
             return
-            
+
         # Run the standard RAG pipeline
         await super().run()
 
