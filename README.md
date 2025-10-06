@@ -56,24 +56,282 @@ LEANN achieves this through *graph-based selective recomputation* with *high-deg
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### 🚀 Quick Install
+### 🚀 Quick Install (Recommended for Most Users)
 
-Clone the repository to access all examples and try amazing applications,
-
+**Step 1: Clone and Setup**
 ```bash
 git clone https://github.com/yichuan-w/LEANN.git leann
 cd leann
+uv venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
-and install LEANN from [PyPI](https://pypi.org/project/leann/) to run them immediately:
-
+**Step 2: Install LEANN**
 ```bash
-uv venv
-source .venv/bin/activate
 uv pip install leann
 ```
+
+**Step 3: Verify Installation**
+```bash
+leann --help
+```
+
+You should see the LEANN CLI help message. If you get an error, see [Troubleshooting](#-troubleshooting) below.
+
+### 🌐 Global Installation (For MCP Integration)
+
+To use LEANN with MCP servers (like Claude Code integration), install globally:
+
+```bash
+# Install globally using uv tool
+uv tool install leann-core --with leann
+
+# Verify global installation
+leann --help
+```
+
+> **When to use global installation:** Required for MCP integration, Claude Code, and when you want to use `leann` commands from any directory.
+## 📖 CLI Reference
+
+LEANN provides a simple but powerful command-line interface. Here are the essential commands:
+
+### 🔨 Building Indexes
+
+**Basic Usage:**
+```bash
+leann build <index-name> --docs <files-or-directories>
+```
+
+**Examples:**
+```bash
+# Index a single directory
+leann build my-docs --docs ./documents
+
+# Index multiple directories  
+leann build my-project --docs ./src ./tests ./docs
+
+# Index specific files and directories
+leann build my-files --docs ./README.md ./src/ ./config.json
+
+# Index only specific file types
+leann build my-pdfs --docs ./documents --file-types .pdf,.docx
+
+# Use different embedding models
+leann build my-docs --docs ./documents --embedding-model sentence-transformers/all-MiniLM-L6-v2
+```
+
+### 🔍 Searching and Querying
+
+**Search (returns ranked results):**
+```bash
+leann search <index-name> "your search query"
+```
+
+**Ask (conversational Q&A):**
+```bash
+leann ask <index-name> "your question"
+```
+
+**Examples:**
+```bash
+# Search for documents
+leann search my-docs "machine learning algorithms"
+
+# Ask questions about your data
+leann ask my-code "How does the authentication system work?"
+
+# Interactive mode (keeps asking questions)
+leann ask my-docs --interactive
+```
+
+### 📋 Index Management
+
+```bash
+# List all indexes
+leann list
+
+# Remove an index
+leann remove my-docs
+
+# Get index information
+leann info my-docs
+```
+
+### ⚙️ Configuration Options
+
+**Embedding Models:**
+```bash
+# Use different embedding backends
+--embedding-mode sentence-transformers  # Default, runs locally
+--embedding-mode openai                 # Requires OPENAI_API_KEY
+--embedding-mode ollama                 # Requires Ollama server
+--embedding-mode mlx                    # Apple Silicon only
+
+# Specify embedding model
+--embedding-model sentence-transformers/all-MiniLM-L6-v2  # Fast, 384-dim
+--embedding-model sentence-transformers/all-mpnet-base-v2  # Better quality, 768-dim
+--embedding-model text-embedding-ada-002                   # OpenAI (requires API key)
+```
+
+**Vector Database Backends:**
+```bash
+--backend hnsw     # Default, good for most use cases
+--backend diskann  # Better for large datasets (>1M documents)
+```
+
+**File Processing:**
+```bash
+--file-types .pdf,.docx,.txt     # Only process specific file types
+--chunk-size 512                 # Adjust text chunk size (default: 256)
+--chunk-overlap 128              # Adjust chunk overlap (default: 128)
+```
+
+### 🌐 Environment Variables
+
+Configure LEANN behavior with environment variables:
+
+```bash
+# OpenAI Configuration
+export OPENAI_API_KEY="your-api-key"
+export OPENAI_BASE_URL="https://api.openai.com/v1"  # Custom endpoint
+
+# Ollama Configuration  
+export OLLAMA_HOST="http://localhost:11434"  # Default Ollama URL
+export OLLAMA_HOST="http://your-server:11434"  # Custom Ollama server
+
+# LEANN Configuration
+export LEANN_LOG_LEVEL="INFO"  # DEBUG, INFO, WARNING, ERROR
+```
+
+### 🔧 Troubleshooting
+
+**Common Issues:**
+
+1. **"leann: command not found"**
+   ```bash
+   # Make sure you're in the right environment
+   source .venv/bin/activate
+   
+   # Or install globally
+   uv tool install leann-core --with leann
+   ```
+
+2. **Ollama connection issues**
+   ```bash
+   # Check if Ollama is running
+   curl http://localhost:11434/api/tags
+   
+   # Set custom Ollama URL
+   export OLLAMA_HOST="http://your-ollama-server:11434"
+   leann build my-docs --docs ./documents --embedding-mode ollama
+   ```
+
+3. **OpenAI API errors**
+   ```bash
+   # Set your API key
+   export OPENAI_API_KEY="your-api-key"
+   
+   # Use custom endpoint (e.g., Azure OpenAI)
+   export OPENAI_BASE_URL="https://your-endpoint.openai.azure.com/v1"
+   ```
+
+4. **Memory issues with large datasets**
+   ```bash
+   # Use smaller batch sizes
+   leann build my-docs --docs ./documents --batch-size 16
+   
+   # Use DiskANN for large datasets
+   leann build my-docs --docs ./documents --backend diskann
+   ```
+
+## 🚀 Getting Started Guide
+
+**New to LEANN?** Follow this step-by-step guide to get up and running quickly.
+
+### Step 1: Choose Your Installation Method
+
+**For most users (recommended):**
+```bash
+# Quick setup - works for 90% of use cases
+git clone https://github.com/yichuan-w/LEANN.git leann
+cd leann
+uv venv && source .venv/bin/activate
+uv pip install leann
+```
+
+**For MCP integration (Claude Code, live data sources):**
+```bash
+# Global installation required for MCP servers
+uv tool install leann-core --with leann
+```
+
+### Step 2: Verify Installation
+
+```bash
+leann --help
+```
+
+If you see the help message, you're ready to go! If not, see [Troubleshooting](#-troubleshooting) above.
+
+### Step 3: Create Your First Index
+
+**Simple example:**
+```bash
+# Create a test directory with some documents
+mkdir test-docs
+echo "LEANN is a vector database for personal AI" > test-docs/about.txt
+echo "It uses 97% less storage than traditional solutions" > test-docs/features.txt
+
+# Build your first index
+leann build my-first-index --docs test-docs
+
+# Search it
+leann search my-first-index "vector database"
+```
+
+### Step 4: Try Real Data
+
+**Index your documents:**
+```bash
+leann build my-docs --docs ~/Documents
+leann search my-docs "your search query"
+```
+
+**Index your code:**
+```bash
+leann build my-code --docs ./src ./tests
+leann ask my-code "How does authentication work?"
+```
+
+### Step 5: Explore Advanced Features
+
+Once you're comfortable with the basics:
+
+- **Try different embedding models**: Add `--embedding-model sentence-transformers/all-MiniLM-L6-v2`
+- **Use Ollama for local LLMs**: Set up Ollama and use `--embedding-mode ollama`
+- **Connect live data**: Try MCP integration for Slack, Twitter, etc.
+- **Explore specialized apps**: Use `python -m apps.email_rag`, `python -m apps.browser_rag`, etc.
+
+### Understanding LEANN vs Apps
+
+**LEANN has two interfaces:**
+
+1. **CLI Commands** (`leann build`, `leann search`, `leann ask`)
+   - General-purpose document indexing and search
+   - Works with any files and directories
+   - Best for: Personal documents, code, general use
+
+2. **Specialized Apps** (`python -m apps.email_rag`, `python -m apps.chatgpt_rag`, etc.)
+   - Pre-built applications for specific data sources
+   - Handle data extraction and formatting automatically
+   - Best for: Email, browser history, chat exports, live data
+
+**When to use which:**
+- Use **CLI** for general documents and code
+- Use **Apps** for specialized data sources (email, chats, etc.)
+
 <!--
-> Low-resource? See “Low-resource setups” in the [Configuration Guide](docs/configuration-guide.md#low-resource-setups). -->
+> Low-resource? See "Low-resource setups" in the [Configuration Guide](docs/configuration-guide.md#low-resource-setups). -->
 
 <details>
 <summary>
@@ -869,6 +1127,30 @@ python -m apps.twitter_rag \
 - "Find tweets about machine learning techniques"
 - "Show me bookmarked threads about startup advice"
 - "What Python tutorials did I save?"
+
+</details>
+
+<details>
+<summary><strong>🔧 Using MCP with CLI Commands</strong></summary>
+
+**Want to use MCP data with regular LEANN CLI?** You can combine MCP apps with CLI commands:
+
+```bash
+# Step 1: Use MCP app to fetch and index data
+python -m apps.slack_rag --mcp-server "slack-mcp-server" --workspace-name "my-team"
+
+# Step 2: The data is now indexed and available via CLI
+leann search slack_messages "project deadline"
+leann ask slack_messages "What decisions were made about the product launch?"
+
+# Same for Twitter bookmarks
+python -m apps.twitter_rag --mcp-server "twitter-mcp-server"
+leann search twitter_bookmarks "machine learning articles"
+```
+
+**MCP vs Manual Export:**
+- **MCP**: Live data, automatic updates, requires server setup
+- **Manual Export**: One-time setup, works offline, requires manual data export
 
 </details>
 
