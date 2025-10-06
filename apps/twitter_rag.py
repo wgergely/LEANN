@@ -28,7 +28,7 @@ class TwitterMCPRAG(BaseRAGExample):
         super().__init__(
             name="Twitter MCP RAG",
             description="RAG application for Twitter bookmarks via MCP servers",
-            default_index_name="twitter_bookmarks"
+            default_index_name="twitter_bookmarks",
         )
 
     def _add_specific_arguments(self, parser: argparse.ArgumentParser):

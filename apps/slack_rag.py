@@ -28,7 +28,7 @@ class SlackMCPRAG(BaseRAGExample):
         super().__init__(
             name="Slack MCP RAG",
             description="RAG application for Slack messages via MCP servers",
-            default_index_name="slack_messages"
+            default_index_name="slack_messages",
         )
 
     def _add_specific_arguments(self, parser: argparse.ArgumentParser):
