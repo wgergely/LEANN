@@ -1,6 +1,6 @@
 # Slack Integration Setup Guide
 
-This comprehensive guide will walk you through setting up Slack integration with LEANN, including troubleshooting common issues like the "users cache is not ready yet" error.
+This guide provides step-by-step instructions for setting up Slack integration with LEANN. 
 
 ## Overview
 
@@ -119,6 +119,48 @@ python -m apps.slack_rag \
   --channels general \
   --query "What did we discuss about the project?"
 ```
+
+## Success Example: Working Integration
+
+Here's what a successful Slack integration looks like in practice:
+
+### Terminal Output
+
+When you run the connection test, you should see output similar to this:
+
+```
+Testing Slack MCP Connection...
+Environment: SLACK_MCP_XOXP_TOKEN = xoxb-16753592806-967...
+
+Connected to Slack MCP server!
+Authenticated with Slack.
+
+Listing available MCP tools...
+Found 5 available tools:
+  1. channels_list - Get list of channels
+  2. conversations_add_message - Add messages to channels  
+  3. conversations_history - Get messages from channels
+  4. conversations_replies - Get thread messages
+  5. conversations_search_messages - Search messages with filters
+
+Testing message fetch from 'random' channel...
+Successfully fetched messages from channel random.
+```
+
+### Visual Example
+
+The following screenshot shows a successful integration with VS Code displaying the retrieved Slack channel data:
+
+![Slack Integration Success](slack-integration-success.png)
+
+### Key Success Indicators
+
+- **Authentication Success**: Connected to your Slack workspace
+- **Tool Availability**: 5 MCP tools ready for interaction  
+- **Data Access**: Retrieved channel directory with member counts and purposes
+- **Comprehensive Coverage**: Access to multiple channels including specialized research groups
+
+This demonstrates that your Slack integration is fully functional and ready for RAG queries across your entire workspace.
 
 ## Common Issues and Solutions
 
@@ -270,5 +312,3 @@ python -m apps.slack_rag \
   --max-messages-per-channel 2000 \
   --query "Show me all decisions made in the last month"
 ```
-
-This guide should help you get Slack integration working smoothly with LEANN. The retry logic improvements should significantly reduce the "cache not ready" errors you were experiencing.
