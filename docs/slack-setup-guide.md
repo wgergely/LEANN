@@ -121,74 +121,51 @@ python -m apps.slack_rag \
 ```
 
 ### 4.3 Real RAG Query Example
+## Real RAG Query Example (Sky Lab Computing “random”)
 
-To ask intelligent questions about your Slack conversations:
+This example shows a real query against the Sky Lab Computing workspace’s “random” channel using the Slack MCP server, with an embedded screenshot of the terminal output.
+
+### Screenshot
+
+![Sky Random RAG](videos/rag-sky-random.png)
+
+### Prerequisites
+
+- Bot is installed in the Sky Lab Computing workspace and invited to the target channel (run `/invite @YourBotName` in the channel if needed)
+- Bot token available and exported in the same terminal session
+
+### Commands
+
+1) Set the workspace token for this shell
 
 ```bash
-# Ask about a specific topic discussed in your channels
-python -m apps.slack_rag \
-  --mcp-server "slack-mcp-server" \
+export SLACK_MCP_XOXP_TOKEN="xoxb-***-redacted-***"
+```
+
+2) Run a real query against the “random” channel by channel ID (C0GN5BX0F)
+
+```bash
+python test_channel_by_id_or_name.py \
+  --channel-id C0GN5BX0F \
   --workspace-name "Sky Lab Computing" \
-  --channels random general \
+  --query "PUBPOL 290"
+```
+
+Expected: The output contains a matching message (e.g., “do we have a channel for class PUBPOL 290 this semester?”) followed by a compact RAG-style answer section.
+
+3) Optional: Ask a broader question
+
+```bash
+python test_channel_by_id_or_name.py \
+  --channel-id C0GN5BX0F \
+  --workspace-name "Sky Lab Computing" \
   --query "What is LEANN about?"
 ```
 
-This will:
-1. **Retrieve relevant messages** from the specified channels
-2. **Index the content** for semantic search
-3. **Generate an intelligent answer** based on the retrieved context
-4. **Provide citations** showing which messages were used
-
-## Success Example: Working Integration
-
-Here's what a successful Slack integration looks like in practice:
-
-### Terminal Output
-
-When you run the connection test, you should see output similar to this:
-
-```
-Testing Slack MCP Connection...
-Environment: SLACK_MCP_XOXP_TOKEN = xoxb-16753592806-967...
-
-Connected to Slack MCP server!
-Authenticated with Slack.
-
-Listing available MCP tools...
-Found 5 available tools:
-  1. channels_list - Get list of channels
-  2. conversations_add_message - Add messages to channels
-  3. conversations_history - Get messages from channels
-  4. conversations_replies - Get thread messages
-  5. conversations_search_messages - Search messages with filters
-
-Testing message fetch from 'random' channel...
-Successfully fetched messages from channel random.
-```
-### Visual Example
-
-The following screenshot shows a successful integration with VS Code displaying the retrieved Slack channel data:
-
-![Slack Integration Success](slack-integration-success.png)
-
-### Key Success Indicators
-
-- **Authentication Success**: Connected to your Slack workspace
-- **Tool Availability**: 5 MCP tools ready for interaction
-- **Data Access**: Retrieved channel directory with member counts and purposes
-- **Comprehensive Coverage**: Access to multiple channels including specialized research groups
-
-This demonstrates that your Slack integration is fully functional and ready for RAG queries across your entire workspace.
-
-### Important: Invite Your Bot to Channels
-
-Before running RAG queries, you need to invite your Slack bot to the channels you want to access. This is a security feature in Slack.
-
-**To invite your bot to a channel:**
-
-1. Go to the channel in Slack (e.g., `#general` or `#random`)
-2. Type: `/invite @YourBotName` (replace with your actual bot name)
-3. Or click the channel name → "Settings" → "Integrations" → "Add apps"
+Notes:
+- If you see `not_in_channel`, invite the bot to the channel and re-run.
+- If you see `channel_not_found`, confirm the channel ID and workspace.
+- Deep search via server-side “search” tools may require additional Slack scopes; the example above performs client-side filtering over retrieved history.
 
 ## Common Issues and Solutions
 
@@ -291,67 +268,6 @@ python -m apps.slack_rag \
   --no-concatenate-conversations \
   --query "Your query"
 ```
-
-### Screenshot: Real RAG Query Results
-
-Here's what you'll see when running a RAG query on your Slack workspace:
-
-
-
-**What this screenshot shows:**
-- ✅ **Successful MCP connection** to Slack workspace
-- ✅ **Channel directory retrieval** (107 channels discovered)
-- ✅ **Proper error handling** for channel access permissions
-- ⚠️ **"not_in_channel" errors** indicating bot needs invitation to specific channels
-
-This is the expected behavior - the integration is working perfectly, it just needs proper channel permissions to access conversation messages.
-
-## Real RAG Query Example (Sky Lab Computing “random”)
-
-This example shows a real query against the Sky Lab Computing workspace’s “random” channel using the Slack MCP server, with an embedded screenshot of the terminal output.
-
-### Screenshot
-
-![Sky Random RAG](videos/rag-sky-random.png)
-
-### Prerequisites
-
-- Bot is installed in the Sky Lab Computing workspace and invited to the target channel (run `/invite @YourBotName` in the channel if needed)
-- Bot token available and exported in the same terminal session
-
-### Commands
-
-1) Set the workspace token for this shell
-
-```bash
-export SLACK_MCP_XOXP_TOKEN="xoxb-***-redacted-***"
-```
-
-2) Run a real query against the “random” channel by channel ID (C0GN5BX0F)
-
-```bash
-python test_channel_by_id_or_name.py \
-  --channel-id C0GN5BX0F \
-  --workspace-name "Sky Lab Computing" \
-  --query "PUBPOL 290"
-```
-
-Expected: The output contains a matching message (e.g., “do we have a channel for class PUBPOL 290 this semester?”) followed by a compact RAG-style answer section.
-
-3) Optional: Ask a broader question
-
-```bash
-python test_channel_by_id_or_name.py \
-  --channel-id C0GN5BX0F \
-  --workspace-name "Sky Lab Computing" \
-  --query "What is LEANN about?"
-```
-
-Notes:
-- If you see `not_in_channel`, invite the bot to the channel and re-run.
-- If you see `channel_not_found`, confirm the channel ID and workspace.
-- Deep search via server-side “search” tools may require additional Slack scopes; the example above performs client-side filtering over retrieved history.
-
 ---
 
 ## Troubleshooting Checklist
