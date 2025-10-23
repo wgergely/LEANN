@@ -1283,10 +1283,7 @@ Examples:
                 for chunk_text in chunk_texts:
                     # TODO: Enhance create_text_chunks to return metadata alongside text
                     # For now, we store chunks with empty metadata
-                    all_texts.append({
-                        "text": chunk_text,
-                        "metadata": {}
-                    })
+                    all_texts.append({"text": chunk_text, "metadata": {}})
 
             except ImportError as e:
                 print(
@@ -1319,10 +1316,7 @@ Examples:
                 nodes = parser.get_nodes_from_documents([doc])
 
                 for node in nodes:
-                    all_texts.append({
-                        "text": node.get_content(),
-                        "metadata": chunk_metadata
-                    })
+                    all_texts.append({"text": node.get_content(), "metadata": chunk_metadata})
 
         print(f"Loaded {len(documents)} documents, {len(all_texts)} chunks")
         return all_texts
