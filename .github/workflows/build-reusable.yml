@@ -47,8 +47,8 @@ jobs:
 
       - name: Run ty type checker
         run: |
-          # Run ty on core packages and apps, excluding multimodal and tests
-          ty check --exclude "apps/multimodal/**" --exclude "tests/**" packages/leann-core/src apps
+          # Run ty on core packages and apps, excluding tests
+          ty check --exclude "tests/**" packages/leann-core/src apps
 
   build:
     needs: [lint, type-check]
