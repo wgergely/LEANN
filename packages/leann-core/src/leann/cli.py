@@ -162,7 +162,7 @@ Examples:
             "--backend-name",
             type=str,
             default="hnsw",
-            choices=["hnsw", "diskann"],
+            choices=["hnsw", "diskann", "faiss"],
             help="Backend to use (default: hnsw)",
         )
         build_parser.add_argument(

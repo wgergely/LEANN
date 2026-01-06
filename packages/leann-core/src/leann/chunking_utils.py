@@ -380,28 +380,52 @@ def create_text_chunks(
                     logger.warning(f"Unsupported extension {ext}, will use traditional chunking")
 
     all_chunks = []
+    
+    # helper for parallel processing
+    def process_docs_parallel(docs, chunk_fn):
+        flattened = []
+        import concurrent.futures
+        # Determine max workers based on list size, max 8
+        max_workers = min(8, len(docs))
+        if max_workers < 2:
+            return chunk_fn(docs)
+            
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Batch docs to reduce overhead
+            batch_size = max(1, len(docs) // (max_workers * 2))
+            batches = [docs[i:i + batch_size] for i in range(0, len(docs), batch_size)]
+            
+            futures = [executor.submit(chunk_fn, batch) for batch in batches]
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    flattened.extend(future.result())
+                except Exception as e:
+                    logger.error(f"Parallel chunking worker failed: {e}")
+        return flattened
+
     if use_ast_chunking:
         code_docs, text_docs = detect_code_files(documents, local_code_extensions)
         if code_docs:
             try:
-                all_chunks.extend(
-                    create_ast_chunks(
-                        code_docs, max_chunk_size=ast_chunk_size, chunk_overlap=ast_chunk_overlap
-                    )
+                # AST chunking is CPU heavy, parallelize it
+                chunk_fn = lambda d: create_ast_chunks(
+                    d, max_chunk_size=ast_chunk_size, chunk_overlap=ast_chunk_overlap
                 )
+                all_chunks.extend(process_docs_parallel(code_docs, chunk_fn))
             except Exception as e:
                 logger.error(f"AST chunking failed: {e}")
                 if ast_fallback_traditional:
-                    all_chunks.extend(
-                        _traditional_chunks_as_dicts(code_docs, chunk_size, chunk_overlap)
-                    )
+                    chunk_fn = lambda d: _traditional_chunks_as_dicts(d, chunk_size, chunk_overlap)
+                    all_chunks.extend(process_docs_parallel(code_docs, chunk_fn))
                 else:
                     raise
         if text_docs:
-            all_chunks.extend(_traditional_chunks_as_dicts(text_docs, chunk_size, chunk_overlap))
+            chunk_fn = lambda d: _traditional_chunks_as_dicts(d, chunk_size, chunk_overlap)
+            all_chunks.extend(process_docs_parallel(text_docs, chunk_fn))
     else:
-        all_chunks = _traditional_chunks_as_dicts(documents, chunk_size, chunk_overlap)
-
+        chunk_fn = lambda d: _traditional_chunks_as_dicts(d, chunk_size, chunk_overlap)
+        all_chunks.extend(process_docs_parallel(documents, chunk_fn))
+            
     logger.info(f"Total chunks created: {len(all_chunks)}")
 
     # Note: Token truncation is now handled at embedding time with dynamic model limits
