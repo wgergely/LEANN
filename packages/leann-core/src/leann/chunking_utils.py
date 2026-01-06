@@ -382,25 +382,33 @@ def create_text_chunks(
     all_chunks = []
     
     # helper for parallel processing
-    def process_docs_parallel(docs, chunk_fn):
+    def process_docs_parallel(docs, chunk_func, **kwargs):
         flattened = []
         import concurrent.futures
-        # Determine max workers based on list size, max 8
-        max_workers = min(8, len(docs))
+        from functools import partial
+        
+        # Determine max workers based on list size, max 16 (agressive optimization for 24 cores)
+        # ProcessPoolExecutor has higher overhead, so we want large batches.
+        max_workers = min(16, len(docs))
         if max_workers < 2:
-            return chunk_fn(docs)
+            return chunk_func(docs, **kwargs)
             
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Batch docs to reduce overhead
-            batch_size = max(1, len(docs) // (max_workers * 2))
+        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+            # Batch docs to reduce overhead. Larger batches are better for Processes.
+            # Split into exactly max_workers chunks if possible
+            batch_size = max(1, len(docs) // max_workers)
             batches = [docs[i:i + batch_size] for i in range(0, len(docs), batch_size)]
             
-            futures = [executor.submit(chunk_fn, batch) for batch in batches]
+            # Create partial function with kwargs
+            func = partial(chunk_func, **kwargs)
+            
+            futures = [executor.submit(func, batch) for batch in batches]
             for future in concurrent.futures.as_completed(futures):
                 try:
                     flattened.extend(future.result())
                 except Exception as e:
                     logger.error(f"Parallel chunking worker failed: {e}")
+                    # Fallback for failed batches? For now just log.
         return flattened
 
     if use_ast_chunking:
@@ -408,23 +416,37 @@ def create_text_chunks(
         if code_docs:
             try:
                 # AST chunking is CPU heavy, parallelize it
-                chunk_fn = lambda d: create_ast_chunks(
-                    d, max_chunk_size=ast_chunk_size, chunk_overlap=ast_chunk_overlap
-                )
-                all_chunks.extend(process_docs_parallel(code_docs, chunk_fn))
+                all_chunks.extend(process_docs_parallel(
+                    code_docs, 
+                    create_ast_chunks, 
+                    max_chunk_size=ast_chunk_size, 
+                    chunk_overlap=ast_chunk_overlap
+                ))
             except Exception as e:
                 logger.error(f"AST chunking failed: {e}")
                 if ast_fallback_traditional:
-                    chunk_fn = lambda d: _traditional_chunks_as_dicts(d, chunk_size, chunk_overlap)
-                    all_chunks.extend(process_docs_parallel(code_docs, chunk_fn))
+                    all_chunks.extend(process_docs_parallel(
+                        code_docs, 
+                        _traditional_chunks_as_dicts, 
+                        chunk_size=chunk_size, 
+                        chunk_overlap=chunk_overlap
+                    ))
                 else:
                     raise
         if text_docs:
-            chunk_fn = lambda d: _traditional_chunks_as_dicts(d, chunk_size, chunk_overlap)
-            all_chunks.extend(process_docs_parallel(text_docs, chunk_fn))
+            all_chunks.extend(process_docs_parallel(
+                text_docs, 
+                _traditional_chunks_as_dicts, 
+                chunk_size=chunk_size, 
+                chunk_overlap=chunk_overlap
+            ))
     else:
-        chunk_fn = lambda d: _traditional_chunks_as_dicts(d, chunk_size, chunk_overlap)
-        all_chunks.extend(process_docs_parallel(documents, chunk_fn))
+        all_chunks.extend(process_docs_parallel(
+            documents, 
+            _traditional_chunks_as_dicts, 
+            chunk_size=chunk_size, 
+            chunk_overlap=chunk_overlap
+        ))
             
     logger.info(f"Total chunks created: {len(all_chunks)}")
 
