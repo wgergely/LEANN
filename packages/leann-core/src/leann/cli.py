@@ -1342,33 +1342,33 @@ Examples:
 
         if use_ast:
             print("🧠 Using AST-aware chunking for code files")
-            try:
-                # Import enhanced chunking utilities from packaged module
-                from .chunking_utils import create_text_chunks
+        else:
+            print("⚡ Using parallel chunking for documents")
 
-                # Use enhanced chunking with AST support
-                chunk_texts = create_text_chunks(
-                    documents,
-                    chunk_size=self.node_parser.chunk_size,
-                    chunk_overlap=self.node_parser.chunk_overlap,
-                    use_ast_chunking=True,
-                    ast_chunk_size=getattr(args, "ast_chunk_size", 768),
-                    ast_chunk_overlap=getattr(args, "ast_chunk_overlap", 96),
-                    code_file_extensions=None,  # Use defaults
-                    ast_fallback_traditional=getattr(args, "ast_fallback_traditional", True),
-                )
+        try:
+            # Import enhanced chunking utilities from packaged module
+            from .chunking_utils import create_text_chunks
 
-                # create_text_chunks now returns list[dict] with metadata preserved
-                all_texts.extend(chunk_texts)
+            # Use enhanced chunking with parallel support (works for both AST and traditional)
+            chunk_texts = create_text_chunks(
+                documents,
+                chunk_size=self.node_parser.chunk_size,
+                chunk_overlap=self.node_parser.chunk_overlap,
+                use_ast_chunking=use_ast,
+                ast_chunk_size=getattr(args, "ast_chunk_size", 768),
+                ast_chunk_overlap=getattr(args, "ast_chunk_overlap", 96),
+                code_file_extensions=None,  # Use defaults
+                ast_fallback_traditional=getattr(args, "ast_fallback_traditional", True),
+            )
 
-            except ImportError as e:
-                print(
-                    f"⚠️  AST chunking utilities not available in package ({e}), falling back to traditional chunking"
-                )
-                use_ast = False
+            # create_text_chunks now returns list[dict] with metadata preserved
+            all_texts.extend(chunk_texts)
 
-        if not use_ast:
-            # Use traditional chunking logic
+        except ImportError as e:
+            print(
+                f"⚠️  Chunking utilities not available in package ({e}), falling back to legacy serial chunking"
+            )
+            # Use traditional chunking logic (serial fallback)
             for doc in tqdm(documents, desc="Chunking documents", unit="doc"):
                 # Check if this is a code file based on source path
                 source_path = doc.metadata.get("source", "")
