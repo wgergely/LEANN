@@ -161,8 +161,6 @@ def truncate_to_token_limit(texts: list[str], token_limit: int) -> list[str]:
             return idx, truncated_text, tokens_removed, original_length
 
     # Use ThreadPoolExecutor for parallel tokenization for large batches
-    # [LEANN-FORK-CHANGE] Added parallel tokenization
-    # Rationale: Speed up processing of large document sets
     # tiktoken releases GIL, so threads work well
     if len(texts) > 50:
         import concurrent.futures
@@ -414,8 +412,6 @@ def compute_embeddings_sentence_transformers(
         batch_size: Batch size for processing
         is_build: Whether this is a build operation (shows progress bar)
         adaptive_optimization: Whether to use adaptive optimization based on batch size
-        # [LEANN-FORK-CHANGE] Added adaptive_optimization flag
-        # Rationale: Allow dynamic batch sizing based on device (MPS/CUDA) benchmarks
     """
     # Handle empty input
     if not texts:
