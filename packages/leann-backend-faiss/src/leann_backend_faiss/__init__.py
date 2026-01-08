@@ -85,9 +85,10 @@ class FaissBackendBuilder(LeannBackendBuilderInterface):
                     index = faiss.index_cpu_to_gpu(res, 0, index)
                     logger.info(f"FAISS: Created GPU IVF{nlist},Flat index")
             except Exception as e:
-                logger.error(f"FAISS: Failed to create GPU index: {e}")
-                raise
-        else:
+                logger.warning(f"FAISS: Failed to create GPU index: {e}. Falling back to CPU.")
+                use_gpu = False
+
+        if not use_gpu:
             # CPU fallback - IndexFlatIP benefits from AVX2 SIMD optimizations
             index = faiss.IndexFlatIP(d)
             logger.info("FAISS: Created CPU IndexFlatIP (AVX2 optimized when available)")

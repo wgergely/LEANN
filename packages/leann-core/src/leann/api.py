@@ -450,8 +450,8 @@ class LeannBuilder:
             pickle.dump(offset_map, f)
         texts_to_embed = [c["text"] for c in self.chunks]
 
-        # Batch embedding computation to avoid OOM or ZMQ message size limits
-        batch_size = 256
+        # Use environment variable for batch_size if set, otherwise default to 256 for stability
+        batch_size = int(os.getenv("LEANN_EMBEDDING_BATCH_SIZE", "256"))
         embeddings_list = []
 
         # Use tqdm if available
@@ -470,12 +470,8 @@ class LeannBuilder:
                 batch,
                 self.embedding_model,
                 self.embedding_mode,
-                use_server=False,  # This seems to be set to False for builds?
-                # Wait, build_index sets use_server=False?
-                # Ah, existing code was use_server=False, implies local computation or managing server internally?
-                # compute_embeddings docstring says: "Use direct computation (for build_index)"
-                # So batching is still good for local RAM usage.
-                is_build=True,
+                use_server=False,
+                is_build=False,  # Set to False to avoid nested tqdm progress bars
                 provider_options=self.embedding_options,
             )
             embeddings_list.append(batch_embeddings)
@@ -1261,6 +1257,7 @@ class LeannChat:
             self.searcher = searcher
             self._owns_searcher = False
         self.llm = get_llm(llm_config)
+        self._active_results = []
 
     def ask(
         self,
@@ -1328,6 +1325,7 @@ class LeannChat:
             )
         ask_time = time.time()
         ans = self.llm.ask(prompt, **llm_kwargs)
+        self._active_results = results
         ask_time = time.time() - ask_time
         logger.info(f"  Ask time: {ask_time} seconds")
         return ans

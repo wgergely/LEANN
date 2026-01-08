@@ -1,12 +1,14 @@
-"""
-Unified embedding computation module
-Consolidates all embedding computation logic using SentenceTransformer
-Preserves all optimization parameters to ensure performance
-"""
+import os
+
+# [Safety] Unset deprecated variable to silence warnings BEFORE any heavy imports
+# Ensure this happens globally as soon as the module is loaded
+if "PYTORCH_CUDA_ALLOC_CONF" in os.environ:
+    _old_val = os.environ.pop("PYTORCH_CUDA_ALLOC_CONF")
+    if "PYTORCH_ALLOC_CONF" not in os.environ:
+        os.environ["PYTORCH_ALLOC_CONF"] = _old_val
 
 import json
 import logging
-import os
 import subprocess
 import time
 from typing import Any, Optional
@@ -435,6 +437,15 @@ def compute_embeddings_sentence_transformers(
             device = "cpu"
 
     # Apply optimizations based on benchmark results
+    env_batch_size = os.getenv("LEANN_EMBEDDING_BATCH_SIZE")
+    if env_batch_size:
+        try:
+            batch_size = int(env_batch_size)
+            adaptive_optimization = False
+            logger.info(f"Using manual batch size from LEANN_EMBEDDING_BATCH_SIZE: {batch_size}")
+        except ValueError:
+            logger.warning(f"Invalid LEANN_EMBEDDING_BATCH_SIZE: {env_batch_size}, using defaults")
+
     if adaptive_optimization:
         # Use optimal batch_size constants for different devices based on benchmark results
         if device == "mps":
@@ -442,7 +453,7 @@ def compute_embeddings_sentence_transformers(
             if model_name == "Qwen/Qwen3-Embedding-0.6B":
                 batch_size = 32
         elif device == "cuda":
-            batch_size = 256  # CUDA optimal batch size
+            batch_size = 256  # Back to full speed, now safe due to metadata thinning
         # Keep original batch_size for CPU
 
     # Create cache key
@@ -460,16 +471,32 @@ def compute_embeddings_sentence_transformers(
 
         # Apply hardware optimizations
         if device == "cuda":
-            # TODO: Haven't tested this yet
+            # Set allocator config to avoid fragmentation if not already set
+            if "PYTORCH_ALLOC_CONF" not in os.environ:
+                os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
+                logger.info("Set PYTORCH_ALLOC_CONF=expandable_segments:True to reduce fragmentation")
+
+            # TF32 allows for faster processing on Ampere+ GPUs
             torch.backends.cuda.matmul.allow_tf32 = True
             torch.backends.cudnn.allow_tf32 = True
             torch.backends.cudnn.benchmark = True
             torch.backends.cudnn.deterministic = False
-            torch.cuda.set_per_process_memory_fraction(0.9)
+            
+            # Reduce memory fraction to leave room for other processes (e.g., search server)
+            # 0.7 is a safer default than 0.9 in multi-service environments
+            mem_fraction = float(os.getenv("LEANN_GPU_MEM_FRACTION", "0.7"))
+            torch.cuda.set_per_process_memory_fraction(mem_fraction)
+            torch.cuda.empty_cache()
+            
+            # Log current utilization
+            allocated = torch.cuda.memory_allocated(0) / 1024**3
+            reserved = torch.cuda.memory_reserved(0) / 1024**3
+            logger.info(f"GPU Memory (vram): Allocated: {allocated:.2f}GB | Reserved: {reserved:.2f}GB | Quota: {mem_fraction*100:.0f}%")
         elif device == "mps":
             try:
                 if hasattr(torch.mps, "set_per_process_memory_fraction"):
-                    torch.mps.set_per_process_memory_fraction(0.9)
+                    torch.mps.set_per_process_memory_fraction(0.7)
+                torch.mps.empty_cache()
             except AttributeError:
                 logger.warning("Some MPS optimizations not available in this PyTorch version")
         elif device == "cpu":
@@ -579,15 +606,24 @@ def compute_embeddings_sentence_transformers(
                 logger.warning(f"FP16 optimization failed: {e}")
 
         # Apply torch.compile optimization
-        if device in ["cuda", "mps"]:
+        # Skip compilation for rebuilds/indexing as it consumes significant VRAM
+        if device in ["cuda", "mps"] and not is_build:
             try:
                 model = torch.compile(model, mode="reduce-overhead", dynamic=True)
                 logger.info(f"Applied torch.compile optimization: {model_name}")
             except Exception as e:
                 logger.warning(f"torch.compile optimization failed: {e}")
+        elif is_build:
+            logger.debug("Skipping torch.compile for build operation to save VRAM")
 
         # Set model to eval mode and disable gradients for inference
         model.eval()
+        # [Safety] Enforce sequence length limit for heavy models to cap VRAM usage
+        # Nomic-BERT supports 2048, but SentenceTransformers might default to 8192
+        if "nomic" in model_name.lower():
+            model.max_seq_length = 2048
+            logger.info(f"Enforced max_seq_length=2048 for '{model_name}'")
+
         for param in model.parameters():
             param.requires_grad_(False)
 

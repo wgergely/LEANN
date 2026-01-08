@@ -268,8 +268,9 @@ Examples:
         )
         build_parser.add_argument(
             "--use-ast-chunking",
-            action="store_true",
-            help="Enable AST-aware chunking for code files (requires astchunk)",
+            action=argparse.BooleanOptionalAction,
+            default=True,
+            help="Enable AST-aware chunking for code files (requires astchunk) (default: true)",
         )
         build_parser.add_argument(
             "--ast-chunk-size",
@@ -1160,7 +1161,6 @@ Examples:
                 ".vue",
                 ".svelte",
                 # Data science
-                ".ipynb",
                 ".R",
                 ".py",
                 ".jl",
@@ -1201,15 +1201,18 @@ Examples:
 
                 fd_files = [line.strip() for line in result.stdout.splitlines() if line.strip()]
                 use_fd = True
-                print(f"⚡ fd: Found {len(fd_files)} files in {docs_dir} (respecting .gitignore)")
+                print(f"⚡ fd: Found {len(fd_files)} files in {docs_dir}")
 
             except (subprocess.SubprocessError, FileNotFoundError) as e:
                 # fd not available, fall back to standard traversal
-                print(f"⚠️  fd not available ({e}), using standard traversal")
+                if os.environ.get("LEANN_LOG_LEVEL", "WARNING").upper() == "DEBUG":
+                    print(f"⚠️  fd not available ({e}), using standard traversal")
                 use_fd = False
 
-            # Build gitignore parser for fallback path
-            gitignore_matches = self._build_gitignore_parser(docs_dir)
+            # Build gitignore parser ONLY as a fallback for standard traversal
+            gitignore_matches = None
+            if not use_fd:
+                gitignore_matches = self._build_gitignore_parser(docs_dir)
 
             # Try to use better PDF parsers first, but only if PDFs are requested
             documents = []
@@ -1291,7 +1294,7 @@ Examples:
                             fd_files = [f for f in fd_files if not f.endswith(".pdf")]
 
                         if fd_files:
-                            print(f"  📄 Loading {len(fd_files)} files from fd...")
+                            # Concatenate with previous message if possible, or just keep it simple
                             other_docs = SimpleDirectoryReader(
                                 docs_dir,
                                 input_files=fd_files,
@@ -1339,6 +1342,23 @@ Examples:
 
         documents = all_documents
 
+        # Path normalization: make paths relative to the documentation directory if possible
+        # This ensures consistent metadata (e.g. src/server.py) instead of absolute paths.
+        if directories:
+            # Sort directories by length (descending) to match longest prefix first
+            sorted_dirs = sorted([Path(d).resolve() for d in directories], key=lambda p: len(str(p)), reverse=True)
+            for doc in documents:
+                fpath = doc.metadata.get("file_path") or doc.metadata.get("source")
+                if fpath:
+                    fpath_obj = Path(fpath).resolve()
+                    for d in sorted_dirs:
+                        try:
+                            rel_path = fpath_obj.relative_to(d)
+                            doc.metadata["file_path"] = rel_path.as_posix()
+                            break
+                        except ValueError:
+                            continue
+
         all_texts = []
 
         # Define code file extensions for intelligent chunking
@@ -1383,7 +1403,6 @@ Examples:
             ".less",
             ".vue",
             ".svelte",
-            ".ipynb",
             ".R",
             ".jl",
         }

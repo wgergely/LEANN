@@ -1,13 +1,15 @@
 import atexit
 import json
+import hashlib
 import logging
 import os
+import signal
 import socket
 import subprocess
 import sys
 import time
-from pathlib import Path
 import requests
+from pathlib import Path
 from typing import Optional, Tuple
 
 from .settings import encode_provider_options
@@ -240,6 +242,10 @@ class EmbeddingServerManager:
                     "embedding_mode": embedding_mode,
                     "distance_metric": kwargs.get("distance_metric", "mips"),
                     "provider_options": provider_options,
+                    "backend_module": self.backend_module_name,  # Send backend to spawn
+                    "signature": hashlib.md5(
+                        json.dumps(config_signature, sort_keys=True, default=str).encode()
+                    ).hexdigest(),
                 }
                 
                 resp = requests.post(f"{service_manager_url}/start", json=payload, timeout=30)
@@ -502,13 +508,16 @@ class EmbeddingServerManager:
             return
 
         service_manager_url = os.getenv("LEANN_SERVICE_MANAGER_URL")
-        # If we have a port but no process, and remote is configured, try stopping remote
+        # If remote service manager is configured, DO NOT call /stop.
+        # The service manager handles lifecycle with idle timeouts.
+        # We only clear local state - the server stays running for reuse.
         if self.server_port and not self.server_process and service_manager_url:
-            try:
-                requests.post(f"{service_manager_url}/stop", json={"port": self.server_port}, timeout=5)
-            except Exception as e:
-                logger.warning(f"Failed to stop remote service: {e}")
+            logger.debug(
+                f"Remote service manager handles lifecycle - clearing local state only"
+            )
             self.server_port = None
+            self._server_host = "localhost"
+            self._server_config = None
             return
 
         if self.server_process and self.server_process.poll() is not None:
