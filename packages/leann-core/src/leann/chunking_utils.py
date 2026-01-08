@@ -4,6 +4,9 @@ Packaged within leann-core so installed wheels can import it reliably.
 """
 
 import logging
+import os
+import concurrent.futures
+from multiprocessing import get_context, cpu_count
 from pathlib import Path
 from typing import Any, Optional
 
@@ -358,9 +361,50 @@ def create_text_chunks(
 
     # helper for parallel processing
     def process_docs_parallel(docs, chunk_func, **kwargs):
-        # FORCE SERIAL EXECUTION TO AVOID DEADLOCKS WITH TREE-SITTER/FAISS IN DOCKER
-        # Using multiprocessing with C-extension libraries inside Docker often leads to hangs/segfaults.
-        return chunk_func(docs, **kwargs)
+        """Internal helper to process documents in parallel batches."""
+        if len(docs) <= 5: # Small sets are faster serial
+            return chunk_func(docs, **kwargs)
+
+        # 1. Determine worker count
+        cpu_total = cpu_count() or 4
+        num_workers = int(os.getenv("LEANN_INDEXING_WORKERS", min(cpu_total, 8)))
+        
+        # 2. Calculate batch size (target ~4 batches per worker for load balancing)
+        target_batches = num_workers * 4
+        batch_size = max(5, len(docs) // target_batches)
+        batches = [docs[i : i + batch_size] for i in range(0, len(docs), batch_size)]
+        
+        logger.info(f"Parallelizing {len(docs)} docs across {num_workers} workers (batch_size={batch_size})")
+
+        # 3. Use 'spawn' for safety with C-extensions (tree-sitter/faiss)
+        ctx = get_context("spawn")
+        all_chunks = []
+        
+        try:
+            from tqdm import tqdm
+            pbar = tqdm(total=len(batches), desc="Processing AST chunks (parallel)", unit="batch", leave=False)
+        except ImportError:
+            pbar = None
+
+        with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers, mp_context=ctx) as executor:
+            # Note: chunk_func must be top-level and picklable
+            future_to_batch = {executor.submit(chunk_func, batch, **kwargs): batch for batch in batches}
+            
+            for future in concurrent.futures.as_completed(future_to_batch):
+                if pbar:
+                    pbar.update(1)
+                try:
+                    results = future.result()
+                    if results:
+                        all_chunks.extend(results)
+                except Exception as e:
+                    batch_sample = future_to_batch[future][0].metadata.get("file_path", "unknown")
+                    logger.error(f"Parallel worker failed on batch starting with {batch_sample}: {e}")
+        
+        if pbar:
+            pbar.close()
+        
+        return all_chunks
 
     if use_ast_chunking:
         code_docs, text_docs = detect_code_files(documents, local_code_extensions)

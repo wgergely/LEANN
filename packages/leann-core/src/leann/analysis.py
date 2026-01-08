@@ -125,7 +125,81 @@ class CodeAnalyzer:
             # 4. Skeleton Generation
             result["skeleton"] = self._generate_concise_skeleton(tree, code)
 
-            # 5. Context Block Generation
+            # 5. Import Resolution (Project Local)
+            resolved_imports = {}
+            if file_path:
+                try:
+                    path_obj = Path(file_path).resolve()
+                    search_root = path_obj.parent
+                    # Crawl up for project root
+                    for _ in range(5):
+                        if (search_root / "src").exists() or (search_root / ".git").exists():
+                            break
+                        if search_root.parent == search_root:
+                            break
+                        search_root = search_root.parent
+                    
+                    for imp in imports:
+                        # Normalize import path
+                        # Python: foo.bar -> foo/bar
+                        # JS/TS: ./utils -> ./utils, ../foo -> ../foo
+                        
+                        rel_path = imp
+                        is_relative = imp.startswith(".")
+                        
+                        if self.language == "python":
+                             rel_path = imp.replace(".", "/")
+                        
+                        # Search candidates
+                        candidates = []
+                        
+                        if self.language == "python":
+                            candidates.append(search_root / f"{rel_path}.py")
+                            candidates.append(search_root / rel_path / "__init__.py")
+                        elif self.language in ["javascript", "typescript", "js", "ts", "jsx", "tsx"]:
+                            # JS/TS often omit extensions or index.js
+                            # If relative, resolve from current file's dir, NOT project root
+                            if is_relative:
+                                # Resolving relative to the file being analyzed
+                                current_dir = path_obj.parent
+                                # We need to handle ./ and ../ carefully with pathlib
+                                # imp such as './foo' or '../bar'
+                                try:
+                                    # pathlib join with relative parts works
+                                    base_resolve = (current_dir / imp).resolve()
+                                    candidates.append(base_resolve.with_suffix(".ts"))
+                                    candidates.append(base_resolve.with_suffix(".tsx"))
+                                    candidates.append(base_resolve.with_suffix(".js"))
+                                    candidates.append(base_resolve.with_suffix(".jsx"))
+                                    candidates.append(base_resolve / "index.ts")
+                                    candidates.append(base_resolve / "index.js")
+                                    # Exact match (if extension was provided)
+                                    candidates.append(base_resolve)
+                                except Exception:
+                                    pass
+                            else:
+                                # Non-relative imports in JS/TS (e.g. 'react', 'src/components')
+                                # Solving 'src/...' aliases is hard without tsconfig, but we can try from search_root
+                                candidates.append(search_root / f"{rel_path}.ts")
+                                candidates.append(search_root / f"{rel_path}.tsx")
+                                candidates.append(search_root / f"{rel_path}.js")
+                                candidates.append(search_root / rel_path / "index.ts")
+                                candidates.append(search_root / rel_path / "index.js")
+                        
+                        for cand in candidates:
+                            if cand.exists() and cand.is_file():
+                                try:
+                                    resolved_imports[imp] = str(cand.relative_to(search_root)).replace("\\", "/")
+                                    break
+                                except ValueError:
+                                    # Candidate might be outside search_root (e.g. monorepo sibling)
+                                    resolved_imports[imp] = str(cand).replace("\\", "/")
+                                    break
+                except Exception:
+                    pass
+            result["resolved_imports"] = resolved_imports
+
+            # 6. Context Block Generation
             context_parts = []
             if result["module_name"]:
                 context_parts.append(f"Module: {result['module_name']}")
@@ -134,9 +208,15 @@ class CodeAnalyzer:
 
             if result["five_paths"]:
                 context_parts.append("Imports: " + ", ".join(result["five_paths"]))
+            
+            if resolved_imports:
+                res_list = [f"{k} ({v})" for k, v in list(resolved_imports.items())[:5]]
+                context_parts.append("Project Imports: " + ", ".join(res_list))
 
-            if result["skeleton"]:
-                context_parts.append(f"Skeleton:\n{result['skeleton']}")
+            # [Optimization] We remove result["skeleton"] from the context_block
+            # because prepending a full file skeleton to EVERY chunk is extremely
+            # VRAM intensive during indexing and often exceeds model token limits.
+            # The skeleton is still preserved in the chunk metadata for display.
 
             if context_parts:
                 result["context_block"] = "\n".join(context_parts)
@@ -178,6 +258,7 @@ class CodeAnalyzer:
         repo_metadata = metadata or {}
         repo_metadata.setdefault("filepath", file_path)
         repo_metadata.setdefault("file_path", file_path)
+        repo_metadata["total_lines"] = len(code.splitlines())
 
         try:
             configs = {
@@ -215,8 +296,22 @@ class CodeAnalyzer:
                 final_meta = {**repo_metadata, **chunk_meta}
                 # Also store raw analysis fields in metadata for advanced filtering
                 final_meta["module_name"] = global_analysis.get("module_name")
+                final_meta["imports"] = global_analysis.get("imports", [])
+                final_meta["resolved_imports"] = global_analysis.get("resolved_imports", {})
+                final_meta["skeleton"] = global_analysis.get("skeleton", "")
 
                 result_chunks.append({"text": chunk_text, "metadata": final_meta})
+
+            # [Safety] Final pass to ensure no chunk exceeds the model's token limit
+            # This is critical to prevent VRAM spikes from extremely long context headers
+            from .chunking_utils import validate_chunk_token_limits
+            texts = [c["text"] for c in result_chunks]
+            validated_texts, truncated_count = validate_chunk_token_limits(texts, max_tokens=2048)
+            
+            if truncated_count > 0:
+                logger.info(f"Refined {truncated_count} chunks to stay within 2048 token limit for {file_path}")
+                for i, v_text in enumerate(validated_texts):
+                    result_chunks[i]["text"] = v_text
 
             return result_chunks
 
@@ -350,6 +445,40 @@ class CodeAnalyzer:
                         if text not in seen:
                             imports.append(text)
                             seen.add(text)
+                            imports.append(text)
+                            seen.add(text)
+
+        # Generic: Scan for string literals that look like file paths
+        # This covers "JSON config imports" or other dynamic loading
+        # Query for all strings
+        if self.parser: # Re-use parser logic broadly
+            try:
+                # Reuse query structure or a simple new query for strings
+                # This works for most languages (python, js, ts, java, c# all have 'string' nodes)
+                query_str = "(string) @str"
+                query = Query(self._language_obj, query_str)
+                cursor = QueryCursor(query)
+                captures = cursor.captures(root_node)
+                
+                for node in captures.get("str", []):
+                    # Clean quotes
+                    raw = node.text.decode("utf8")
+                    cleaned = raw.strip("'").strip('"')
+                    
+                    if not cleaned or "\n" in cleaned or len(cleaned) > 255:
+                        continue
+                        
+                    if cleaned in seen:
+                        continue
+                        
+                    # Heuristic: does it look like a file path?
+                    # Contains slash or has extension
+                    if "/" in cleaned or "\\" in cleaned or "." in cleaned:
+                         imports.append(cleaned)
+                         seen.add(cleaned)
+            except Exception:
+                pass
+                
         return imports
 
     def _generate_concise_skeleton(self, tree, code: str) -> str:
