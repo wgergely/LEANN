@@ -168,8 +168,8 @@ Examples:
         build_parser.add_argument(
             "--embedding-model",
             type=str,
-            default="facebook/contriever",
-            help="Embedding model (default: facebook/contriever)",
+            default="nomic-ai/nomic-embed-text-v1.5",
+            help="Embedding model (default: nomic-ai/nomic-embed-text-v1.5)",
         )
         build_parser.add_argument(
             "--embedding-mode",
@@ -1091,7 +1091,7 @@ Examples:
                             input_files=file_list,
                             # exclude_hidden only affects directory scans; input_files are explicit
                             filename_as_id=True,
-                        ).load_data()
+                        ).load_data(num_workers=os.cpu_count() or 1)
                         all_documents.extend(file_docs)
                         print(
                             f"    ✅ Loaded {len(file_docs)} document{'s' if len(file_docs) > 1 else ''}"
@@ -1173,7 +1173,41 @@ Examples:
 
         for docs_dir in directories:
             print(f"Processing directory: {docs_dir}")
-            # Build gitignore parser for each directory
+
+            # Use fd for fast file enumeration with native gitignore support
+            # fd is a blazing-fast alternative to find, written in Rust
+            fd_files = []
+            use_fd = False
+
+            try:
+                import subprocess
+
+                # Build fd command with extension filters
+                # fd respects .gitignore by default and is extremely fast
+                fd_cmd = ["fd", "--type", "f", "--absolute-path"]
+
+                # Add extension filters if specified
+                if code_extensions:
+                    for ext in code_extensions:
+                        # fd uses -e for extension (without the dot)
+                        ext_clean = ext.lstrip(".")
+                        fd_cmd.extend(["-e", ext_clean])
+
+                # Execute fd
+                result = subprocess.run(
+                    fd_cmd, cwd=docs_dir, capture_output=True, text=True, check=True
+                )
+
+                fd_files = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+                use_fd = True
+                print(f"⚡ fd: Found {len(fd_files)} files in {docs_dir} (respecting .gitignore)")
+
+            except (subprocess.SubprocessError, FileNotFoundError) as e:
+                # fd not available, fall back to standard traversal
+                print(f"⚠️  fd not available ({e}), using standard traversal")
+                use_fd = False
+
+            # Build gitignore parser for fallback path
             gitignore_matches = self._build_gitignore_parser(docs_dir)
 
             # Try to use better PDF parsers first, but only if PDFs are requested
@@ -1190,46 +1224,55 @@ Examples:
                     try:
                         # Ensure both paths are resolved before computing relativity
                         file_path_resolved = file_path.resolve()
-                        # Determine directory scope using the non-resolved path to avoid
-                        # misclassifying symlinked entries as outside the docs directory
-                        relative_path = file_path.relative_to(docs_path)
-                        if not include_hidden and _path_has_hidden_segment(relative_path):
-                            continue
-                        # Use absolute path for gitignore matching
-                        if self._should_exclude_file(file_path_resolved, gitignore_matches):
-                            continue
+
+                        # fd filter: strictly check if file is in fd_files if we used fd
+                        if use_fd:
+                            if str(file_path_resolved) not in fd_files:
+                                continue
+                        else:
+                            # Fallback to manual gitignore parsing
+                            # Determine directory scope using the non-resolved path to avoid
+                            # misclassifying symlinked entries as outside the docs directory
+                            relative_path = file_path.relative_to(docs_path)
+                            if not include_hidden and _path_has_hidden_segment(relative_path):
+                                continue
+                            # Use absolute path for gitignore matching
+                            if self._should_exclude_file(file_path_resolved, gitignore_matches):
+                                continue
+
+                        # ... rest of PDF processing ...
+                        print(f"Processing PDF: {file_path}")
+
+                        # Try PyMuPDF first (best quality)
+                        text = extract_pdf_text_with_pymupdf(str(file_path))
+                        if text is None:
+                            # Try pdfplumber
+                            text = extract_pdf_text_with_pdfplumber(str(file_path))
+
+                        if text:
+                            # Create a simple document structure
+                            from llama_index.core import Document
+
+                            doc = Document(text=text, metadata={"source": str(file_path)})
+                            documents.append(doc)
+                        else:
+                            # Fallback to default reader
+                            print(f"Using default reader for {file_path}")
+                            try:
+                                default_docs = SimpleDirectoryReader(
+                                    str(file_path.parent),
+                                    exclude_hidden=not include_hidden,
+                                    filename_as_id=True,
+                                    required_exts=[file_path.suffix],
+                                ).load_data()
+                                documents.extend(default_docs)
+                            except Exception as e:
+                                print(f"Warning: Could not process {file_path}: {e}")
+
                     except ValueError:
                         # Skip files that can't be made relative to docs_path
                         print(f"⚠️  Skipping file outside directory scope: {file_path}")
                         continue
-
-                    print(f"Processing PDF: {file_path}")
-
-                    # Try PyMuPDF first (best quality)
-                    text = extract_pdf_text_with_pymupdf(str(file_path))
-                    if text is None:
-                        # Try pdfplumber
-                        text = extract_pdf_text_with_pdfplumber(str(file_path))
-
-                    if text:
-                        # Create a simple document structure
-                        from llama_index.core import Document
-
-                        doc = Document(text=text, metadata={"source": str(file_path)})
-                        documents.append(doc)
-                    else:
-                        # Fallback to default reader
-                        print(f"Using default reader for {file_path}")
-                        try:
-                            default_docs = SimpleDirectoryReader(
-                                str(file_path.parent),
-                                exclude_hidden=not include_hidden,
-                                filename_as_id=True,
-                                required_exts=[file_path.suffix],
-                            ).load_data()
-                            documents.extend(default_docs)
-                        except Exception as e:
-                            print(f"Warning: Could not process {file_path}: {e}")
 
             # Load other file types with default reader
             # Exclude PDFs from code_extensions if they were already processed separately
@@ -1238,43 +1281,52 @@ Examples:
                 other_file_extensions = [ext for ext in code_extensions if ext != ".pdf"]
 
             try:
-                # Create a custom file filter function using our PathSpec
-                def file_filter(
-                    file_path: str, docs_dir=docs_dir, gitignore_matches=gitignore_matches
-                ) -> bool:
-                    """Return True if file should be included (not excluded)"""
-                    try:
-                        docs_path_obj = Path(docs_dir).resolve()
-                        file_path_obj = Path(file_path).resolve()
-                        # Use absolute path for gitignore matching
-                        _ = file_path_obj.relative_to(docs_path_obj)  # validate scope
-                        return not self._should_exclude_file(file_path_obj, gitignore_matches)
-                    except (ValueError, OSError):
-                        return True  # Include files that can't be processed
-
                 # Only load other file types if there are extensions to process
                 if other_file_extensions:
-                    other_docs = SimpleDirectoryReader(
-                        docs_dir,
-                        recursive=True,
-                        encoding="utf-8",
-                        required_exts=other_file_extensions,
-                        file_extractor={},  # Use default extractors
-                        exclude_hidden=not include_hidden,
-                        filename_as_id=True,
-                    ).load_data(show_progress=True)
+                    if use_fd and fd_files:
+                        # High-performance path: fd already filtered by extension and gitignore
+                        # Filter out PDFs if they were processed separately
+                        if should_process_pdfs:
+                            fd_files = [f for f in fd_files if not f.endswith(".pdf")]
+
+                        if fd_files:
+                            print(f"  📄 Loading {len(fd_files)} files from fd...")
+                            other_docs = SimpleDirectoryReader(
+                                docs_dir,
+                                input_files=fd_files,
+                                recursive=False,  # Explicit file list provided
+                                encoding="utf-8",
+                                file_extractor={},
+                                exclude_hidden=not include_hidden,
+                                filename_as_id=True,
+                            ).load_data(show_progress=True, num_workers=os.cpu_count() or 1)
+                        else:
+                            other_docs = []
+                    else:
+                        # Fallback: Standard recursive load with post-filtering
+                        other_docs = SimpleDirectoryReader(
+                            docs_dir,
+                            recursive=True,
+                            encoding="utf-8",
+                            required_exts=other_file_extensions,
+                            file_extractor={},  # Use default extractors
+                            exclude_hidden=not include_hidden,
+                            filename_as_id=True,
+                        ).load_data(show_progress=True, num_workers=os.cpu_count() or 1)
+
+                        # Filter documents (slow path - only when fd unavailable)
+                        filtered_docs = []
+                        for doc in tqdm(other_docs, desc="Filtering files", unit="file"):
+                            file_path = doc.metadata.get("file_path", "")
+                            file_path_obj = Path(file_path).resolve()
+                            if not self._should_exclude_file(file_path_obj, gitignore_matches):
+                                doc.metadata["source"] = file_path
+                                filtered_docs.append(doc)
+                        other_docs = filtered_docs
                 else:
                     other_docs = []
 
-                # Filter documents after loading based on gitignore rules
-                filtered_docs = []
-                for doc in other_docs:
-                    file_path = doc.metadata.get("file_path", "")
-                    if file_filter(file_path):
-                        doc.metadata["source"] = file_path
-                        filtered_docs.append(doc)
-
-                documents.extend(filtered_docs)
+                documents.extend(other_docs)
             except ValueError as e:
                 if "No files found" in str(e):
                     print(f"No additional files found for other supported types in {docs_dir}.")
