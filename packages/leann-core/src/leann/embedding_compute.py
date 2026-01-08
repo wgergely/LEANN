@@ -140,34 +140,51 @@ def truncate_to_token_limit(texts: list[str], token_limit: int) -> list[str]:
     # Use tiktoken with cl100k_base encoding
     enc = tiktoken.get_encoding("cl100k_base")
 
-    truncated_texts = []
+    truncated_texts = [None] * len(texts)
     truncation_count = 0
     total_tokens_removed = 0
     max_original_length = 0
 
-    for i, text in enumerate(texts):
+    # Parallel processing helper
+    def process_text(idx_text):
+        idx, text = idx_text
+        # Re-get encoder inside thread if needed, but cl100k_base is cached by tiktoken
         tokens = enc.encode(text)
         original_length = len(tokens)
 
         if original_length <= token_limit:
-            # Text is within limit, keep as is
-            truncated_texts.append(text)
+            return idx, text, 0, 0
         else:
-            # Truncate to token_limit
             truncated_tokens = tokens[:token_limit]
             truncated_text = enc.decode(truncated_tokens)
-            truncated_texts.append(truncated_text)
-
-            # Track truncation statistics
-            truncation_count += 1
             tokens_removed = original_length - token_limit
+            return idx, truncated_text, tokens_removed, original_length
+
+    # Use ThreadPoolExecutor for parallel tokenization for large batches
+    # [LEANN-FORK-CHANGE] Added parallel tokenization
+    # Rationale: Speed up processing of large document sets
+    # tiktoken releases GIL, so threads work well
+    if len(texts) > 50:
+        import concurrent.futures
+
+        # Limit workers to avoid overhead on small/medium batches
+        max_workers = min(32, os.cpu_count() or 4)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            results = list(executor.map(process_text, enumerate(texts)))
+    else:
+        results = map(process_text, enumerate(texts))
+
+    for idx, truncated_text, tokens_removed, original_len in results:
+        truncated_texts[idx] = truncated_text
+        if tokens_removed > 0:
+            truncation_count += 1
             total_tokens_removed += tokens_removed
-            max_original_length = max(max_original_length, original_length)
+            max_original_length = max(max_original_length, original_len)
 
             # Log individual truncation at WARNING level (first few only)
             if truncation_count <= 3:
                 logger.warning(
-                    f"Text {i + 1} truncated: {original_length} → {token_limit} tokens "
+                    f"Text {idx + 1} truncated: {original_len} → {token_limit} tokens "
                     f"({tokens_removed} tokens removed)"
                 )
             elif truncation_count == 4:
@@ -397,6 +414,8 @@ def compute_embeddings_sentence_transformers(
         batch_size: Batch size for processing
         is_build: Whether this is a build operation (shows progress bar)
         adaptive_optimization: Whether to use adaptive optimization based on batch size
+        # [LEANN-FORK-CHANGE] Added adaptive_optimization flag
+        # Rationale: Allow dynamic batch sizing based on device (MPS/CUDA) benchmarks
     """
     # Handle empty input
     if not texts:
@@ -472,6 +491,7 @@ def compute_embeddings_sentence_transformers(
             "low_cpu_mem_usage": True,
             "_fast_init": True,
             "attn_implementation": "eager",  # Use eager attention for speed
+            "trust_remote_code": True,  # Required for nomic-embed-text and similar models
         }
 
         tokenizer_kwargs = {
@@ -493,6 +513,7 @@ def compute_embeddings_sentence_transformers(
                 model_kwargs=local_model_kwargs,
                 tokenizer_kwargs=local_tokenizer_kwargs,
                 local_files_only=True,
+                trust_remote_code=True,
             )
             logger.info("Model loaded successfully! (local + optimized)")
         except TypeError as e:
@@ -506,6 +527,7 @@ def compute_embeddings_sentence_transformers(
                         model_name,
                         device=device,
                         local_files_only=True,
+                        trust_remote_code=True,
                     )
                     logger.info("Model loaded successfully! (local + basic)")
                 except Exception as e2:
@@ -514,6 +536,7 @@ def compute_embeddings_sentence_transformers(
                         model_name,
                         device=device,
                         local_files_only=False,
+                        trust_remote_code=True,
                     )
                     logger.info("Model loaded successfully! (network + basic)")
             else:
@@ -533,6 +556,7 @@ def compute_embeddings_sentence_transformers(
                     model_kwargs=network_model_kwargs,
                     tokenizer_kwargs=network_tokenizer_kwargs,
                     local_files_only=False,
+                    trust_remote_code=True,
                 )
                 logger.info("Model loaded successfully! (network + optimized)")
             except TypeError as e2:
@@ -544,6 +568,7 @@ def compute_embeddings_sentence_transformers(
                         model_name,
                         device=device,
                         local_files_only=False,
+                        trust_remote_code=True,
                     )
                     logger.info("Model loaded successfully! (network + basic)")
                 else:

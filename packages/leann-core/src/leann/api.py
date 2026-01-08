@@ -1,6 +1,7 @@
 """
 This file contains the core API for the LEANN project, now definitively updated
 with the correct, original embedding logic from the user's reference code.
+
 """
 
 import json
@@ -280,7 +281,7 @@ class LeannBuilder:
     def __init__(
         self,
         backend_name: str,
-        embedding_model: str = "facebook/contriever",
+        embedding_model: str = "nomic-ai/nomic-embed-text-v1.5",
         dimensions: Optional[int] = None,
         embedding_mode: str = "sentence-transformers",
         embedding_options: Optional[dict[str, Any]] = None,
@@ -448,14 +449,38 @@ class LeannBuilder:
         with open(offset_file, "wb") as f:
             pickle.dump(offset_map, f)
         texts_to_embed = [c["text"] for c in self.chunks]
-        embeddings = compute_embeddings(
-            texts_to_embed,
-            self.embedding_model,
-            self.embedding_mode,
-            use_server=False,
-            is_build=True,
-            provider_options=self.embedding_options,
-        )
+        
+        # Batch embedding computation to avoid OOM or ZMQ message size limits
+        batch_size = 256
+        embeddings_list = []
+        
+        # Use tqdm if available
+        try:
+            from tqdm import tqdm
+            iterator = tqdm(range(0, len(texts_to_embed), batch_size), desc="Computing embeddings", unit="batch")
+        except ImportError:
+            iterator = range(0, len(texts_to_embed), batch_size)
+
+        for i in iterator:
+            batch = texts_to_embed[i : i + batch_size]
+            batch_embeddings = compute_embeddings(
+                batch,
+                self.embedding_model,
+                self.embedding_mode,
+                use_server=False, # This seems to be set to False for builds? 
+                # Wait, build_index sets use_server=False?
+                # Ah, existing code was use_server=False, implies local computation or managing server internally?
+                # compute_embeddings docstring says: "Use direct computation (for build_index)"
+                # So batching is still good for local RAM usage.
+                is_build=True,
+                provider_options=self.embedding_options,
+            )
+            embeddings_list.append(batch_embeddings)
+            
+        if embeddings_list:
+            embeddings = np.vstack(embeddings_list)
+        else:
+            embeddings = np.array([])
         string_ids = [chunk["id"] for chunk in self.chunks]
         # Persist ID map alongside index so backends that return integer labels can remap to passage IDs
         try:
@@ -704,14 +729,33 @@ class LeannBuilder:
             raise ValueError("No valid chunks to append.")
 
         texts_to_embed = [chunk["text"] for chunk in valid_chunks]
-        embeddings = compute_embeddings(
-            texts_to_embed,
-            self.embedding_model,
-            self.embedding_mode,
-            use_server=False,
-            is_build=True,
-            provider_options=self.embedding_options,
-        )
+        
+        # Batch embedding computation
+        batch_size = 256
+        embeddings_list = []
+        
+        try:
+            from tqdm import tqdm
+            iterator = tqdm(range(0, len(texts_to_embed), batch_size), desc="Computing embeddings", unit="batch")
+        except ImportError:
+            iterator = range(0, len(texts_to_embed), batch_size)
+            
+        for i in iterator:
+            batch = texts_to_embed[i : i + batch_size]
+            batch_embeddings = compute_embeddings(
+                batch,
+                self.embedding_model,
+                self.embedding_mode,
+                use_server=False,
+                is_build=True,
+                provider_options=self.embedding_options,
+            )
+            embeddings_list.append(batch_embeddings)
+            
+        if embeddings_list:
+            embeddings = np.vstack(embeddings_list)
+        else:
+            embeddings = np.array([])
 
         embedding_dim = embeddings.shape[1]
         expected_dim = meta.get("dimensions")
