@@ -58,7 +58,7 @@ class BaseSearcher(LeannBackendSearcherInterface, ABC):
 
     def _ensure_server_running(
         self, passages_source_file: str, port: Optional[int], **kwargs
-    ) -> int:
+    ) -> tuple[str, int]:
         """
         Ensures the embedding server is running if recompute is needed.
         This is a helper for subclasses.
@@ -82,7 +82,7 @@ class BaseSearcher(LeannBackendSearcherInterface, ABC):
             if k not in ("build_prompt_template", "query_prompt_template", "prompt_template")
         }
 
-        server_started, actual_port = self.embedding_server_manager.start_server(
+        server_started, host, actual_port = self.embedding_server_manager.start_server(
             port=port if port is not None else 5557,
             model_name=self.embedding_model,
             embedding_mode=self.embedding_mode,
@@ -94,13 +94,14 @@ class BaseSearcher(LeannBackendSearcherInterface, ABC):
         if not server_started:
             raise RuntimeError(f"Failed to start embedding server on port {actual_port}")
 
-        return actual_port
+        return host, actual_port
 
     def compute_query_embedding(
         self,
         query: str,
         use_server_if_available: bool = True,
         zmq_port: Optional[int] = None,
+        zmq_host: str = "localhost",
         query_template: Optional[str] = None,
     ) -> np.ndarray:
         """
@@ -130,11 +131,11 @@ class BaseSearcher(LeannBackendSearcherInterface, ABC):
                 # Ensure we have a server with passages_file for compatibility
                 passages_source_file = self.index_dir / f"{self.index_path.name}.meta.json"
                 # Convert to absolute path to ensure server can find it
-                zmq_port = self._ensure_server_running(
+                zmq_host, zmq_port = self._ensure_server_running(
                     str(passages_source_file.resolve()), zmq_port
                 )
 
-                return self._compute_embedding_via_server([query], zmq_port)[
+                return self._compute_embedding_via_server([query], zmq_host, zmq_port)[
                     0:1
                 ]  # Return (1, D) shape
             except Exception as e:
@@ -152,7 +153,7 @@ class BaseSearcher(LeannBackendSearcherInterface, ABC):
             provider_options=self.embedding_options,
         )
 
-    def _compute_embedding_via_server(self, chunks: list, zmq_port: int) -> np.ndarray:
+    def _compute_embedding_via_server(self, chunks: list, zmq_host: str, zmq_port: int) -> np.ndarray:
         """Compute embeddings using the ZMQ embedding server."""
         import msgpack
         import zmq
@@ -161,7 +162,7 @@ class BaseSearcher(LeannBackendSearcherInterface, ABC):
             context = zmq.Context()
             socket = context.socket(zmq.REQ)
             socket.setsockopt(zmq.RCVTIMEO, 30000)  # 30 second timeout
-            socket.connect(f"tcp://localhost:{zmq_port}")
+            socket.connect(f"tcp://{zmq_host}:{zmq_port}")
 
             # Send embedding request
             request = chunks
@@ -195,6 +196,7 @@ class BaseSearcher(LeannBackendSearcherInterface, ABC):
         recompute_embeddings: bool = False,
         pruning_strategy: Literal["global", "local", "proportional"] = "global",
         zmq_port: Optional[int] = None,
+        zmq_host: str = "localhost",
         **kwargs,
     ) -> dict[str, Any]:
         """

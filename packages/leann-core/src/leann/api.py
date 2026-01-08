@@ -1016,10 +1016,11 @@ class LeannSearcher:
             logger.warning(f"  ✅ Auto-adjusted top_k to {top_k} to match available documents")
 
         zmq_port = None
+        zmq_host = "localhost"
 
         start_time = time.time()
         if recompute_embeddings:
-            zmq_port = self.backend_impl._ensure_server_running(
+            zmq_host, zmq_port = self.backend_impl._ensure_server_running(
                 self.meta_path_str,
                 port=expected_zmq_port,
                 **kwargs,
@@ -1047,6 +1048,7 @@ class LeannSearcher:
             query,
             use_server_if_available=recompute_embeddings,
             zmq_port=zmq_port,
+            zmq_host=zmq_host,
             query_template=query_template,
         )
         logger.info(f"  Generated embedding shape: {query_embedding.shape}")
@@ -1061,6 +1063,7 @@ class LeannSearcher:
             "recompute_embeddings": recompute_embeddings,
             "pruning_strategy": pruning_strategy,
             "zmq_port": zmq_port,
+            "zmq_host": zmq_host,
         }
         # Only HNSW supports batching; forward conditionally
         if self.backend_name == "hnsw":
