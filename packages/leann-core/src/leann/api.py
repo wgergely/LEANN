@@ -1287,12 +1287,23 @@ class LeannChat:
         )
         search_time = time.time() - search_time
         logger.info(f"  Search time: {search_time} seconds")
-        context = "\n\n".join([r.text for r in results])
+        context_parts = []
+        for r in results:
+            source = r.metadata.get("file_path") or r.metadata.get("source") or "Unknown source"
+            # Add line number range if available (from AST chunking or similar)
+            if "start_line" in r.metadata and "end_line" in r.metadata:
+                source += f" (lines {r.metadata['start_line']}-{r.metadata['end_line']})"
+            
+            context_parts.append(f"Source: {source}\nContent:\n{r.text}")
+
+        context = "\n\n---\n\n".join(context_parts)
         prompt = (
-            "Here is some retrieved context that might help answer your question:\n\n"
+            "Here is some retrieved context that might help answer your question.\n"
+            "Each matching chunk starts with its source location.\n\n"
             f"{context}\n\n"
             f"Question: {question}\n\n"
-            "Please provide the best answer you can based on this context and your knowledge."
+            "Please provide the best answer you can based on this context and your knowledge. "
+            "When referencing specific code or facts, please cite the source file and line numbers if available."
         )
 
         logger.info("The context provided to the LLM is:")
