@@ -3,9 +3,7 @@ Test suite for astchunk integration with LEANN.
 Tests AST-aware chunking functionality using the REAL astchunk library.
 """
 
-import os
 import sys
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -15,7 +13,7 @@ import pytest
 try:
     TEST_FILE_PATH = Path(__file__).resolve()
     LEANN_FORK_DIR = TEST_FILE_PATH.parent.parent
-    
+
     LEANN_CORE_SRC = LEANN_FORK_DIR / "packages" / "leann-core" / "src"
     ASTCHUNK_SRC = LEANN_FORK_DIR / "packages" / "astchunk-leann" / "src"
     APPS_DIR = LEANN_FORK_DIR / "apps"
@@ -33,7 +31,7 @@ sys.modules["leann_backend_faiss"] = MagicMock()
 
 # Mock LlamaIndex if missing
 try:
-    import llama_index.core.node_parser
+    import llama_index.core.node_parser  # noqa: F401
 except ImportError:
     llama_index_mock = MagicMock()
     core_mock = MagicMock()
@@ -41,7 +39,7 @@ except ImportError:
     sys.modules["llama_index"] = llama_index_mock
     sys.modules["llama_index.core"] = core_mock
     sys.modules["llama_index.core.node_parser"] = node_parser_mock
-    
+
     # Configure SentenceSplitter to return usable nodes
     mock_splitter_instance = MagicMock()
     mock_node = MagicMock()
@@ -50,21 +48,19 @@ except ImportError:
     node_parser_mock.SentenceSplitter.return_value = mock_splitter_instance
 
 
-from typing import Optional
+from typing import Optional  # noqa: E402
 
 # Import direct
-from leann.chunking_utils import (
+from leann.chunking_utils import (  # noqa: E402
     create_ast_chunks,
-    create_text_chunks,
-    create_traditional_chunks,
     detect_code_files,
     get_language_from_extension,
 )
 
 # Check if astchunk is available
 try:
-    import astchunk
-    from astchunk import ASTChunkBuilder
+    import astchunk  # noqa: F401
+
     ASTCHUNK_AVAILABLE = True
 except ImportError:
     ASTCHUNK_AVAILABLE = False
@@ -85,10 +81,13 @@ class MockDocument:
 
 class TestCodeFileDetection:
     """Test code file detection and language mapping."""
-    
+
     def test_detect_code_files_python(self):
-        docs = [MockDocument("print('hello')", "/path/to/file.py"), MockDocument("text", "/path/to/file.txt")]
-        code_docs, text_docs = detect_code_files(docs)
+        docs = [
+            MockDocument("print('hello')", "/path/to/file.py"),
+            MockDocument("text", "/path/to/file.txt"),
+        ]
+        code_docs, _text_docs = detect_code_files(docs)
         assert len(code_docs) == 1
         assert code_docs[0].metadata["language"] == "python"
 
@@ -118,10 +117,10 @@ class Calculator:
         chunks = create_ast_chunks(docs, max_chunk_size=200, chunk_overlap=50)
 
         assert len(chunks) > 0
-        
+
         # Verify Enrichment (Imports Injection)
-        combined_content = " ".join([c["text"] for c in chunks])
-        
+        # combined_content = " ".join([c["text"] for c in chunks])
+
         # Verify Metadata
         first_chunk_meta = chunks[0]["metadata"]
         assert "imports" in first_chunk_meta or "five_paths" in first_chunk_meta
@@ -133,7 +132,7 @@ class Calculator:
     @pytest.mark.skipif(not ASTCHUNK_AVAILABLE, reason="astchunk not installed")
     def test_create_ast_chunks_typescript(self):
         """Test AST chunking for TypeScript."""
-        ts_code = '''
+        ts_code = """
 import { useState } from 'react';
 
 interface Props {
@@ -143,10 +142,10 @@ interface Props {
 export const MyComponent = ({ name }: Props) => {
   return <div>Hello {name}</div>;
 }
-'''
+"""
         docs = [MockDocument(ts_code, "/test/component.tsx", {"language": "typescript"})]
         chunks = create_ast_chunks(docs, max_chunk_size=200)
-        
+
         assert len(chunks) > 0
         assert any("MyComponent" in c["text"] for c in chunks)
         # Check imports logic for TS
@@ -160,12 +159,12 @@ export const MyComponent = ({ name }: Props) => {
         doc_no_lang = MockDocument("some code", "/path/unknown.xyz", {})
         chunks = create_ast_chunks([doc_no_lang])
         assert len(chunks) > 0
-        
+
         # Should contain "mock content" if mocked, or real content if real splitter used?
         # If mocked, get_nodes_from_documents returns [mock_node] with "mock content".
         # So chunks[0]["text"] == "mock content".
         # If real splitter, it chunks "some code" -> "some code".
-        
+
         # We accept either for resilience
         text = chunks[0]["text"]
         assert text == "mock content" or text == "some code"
@@ -173,15 +172,17 @@ export const MyComponent = ({ name }: Props) => {
     @pytest.mark.skipif(not ASTCHUNK_AVAILABLE, reason="astchunk not installed")
     def test_chunk_expansion_is_active(self):
         """Verify that chunk expansion (ancestors) is enabled."""
-        code = '''
+        code = """
 class Parent:
     def child(self):
         pass
-'''
+"""
         docs = [MockDocument(code, "test.py", {"language": "python"})]
         chunks = create_ast_chunks(docs)
-        
+
         # Checking for ancestors in text or metadata
         for chunk in chunks:
             if "def child" in chunk["text"]:
-                assert "Parent" in chunk["text"] or "Parent" in chunk.get("metadata", {}).get("ancestors", "")
+                assert "Parent" in chunk["text"] or "Parent" in chunk.get("metadata", {}).get(
+                    "ancestors", ""
+                )

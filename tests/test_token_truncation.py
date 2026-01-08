@@ -646,6 +646,7 @@ class TestTokenLimitCaching:
     def test_parallel_tokenization_performance(self):
         """Verify performance gain from parallel tokenization on large batches."""
         import time
+
         from leann.embedding_compute import truncate_to_token_limit
 
         # 60 texts > 50 trigger threshold for parallel path

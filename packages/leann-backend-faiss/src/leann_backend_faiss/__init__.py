@@ -22,13 +22,15 @@ from leann.registry import register_backend
 from leann.searcher_base import BaseSearcher
 
 from . import faiss_embedding_server
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
     "FaissBackendBuilder",
     "FaissBackendFactory",
     "FaissBackendSearcher",
-    "faiss_embedding_server",]
+    "faiss_embedding_server",
+]
 
 
 class FaissBackendBuilder(LeannBackendBuilderInterface):

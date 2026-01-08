@@ -84,8 +84,9 @@ def extract_pdf_text_with_pdfplumber(file_path: str) -> str | None:
 
 class LeannCLI:
     def __init__(self):
-        # Always use project-local .leann directory (like .git)
-        self.indexes_dir = Path.cwd() / ".leann" / "indexes"
+        # Respect LEANN_HOME if set, otherwise fallback to project-local .leann
+        self.leann_home = Path(os.environ.get("LEANN_HOME", Path.cwd() / ".leann"))
+        self.indexes_dir = self.leann_home / "indexes"
         self.indexes_dir.mkdir(parents=True, exist_ok=True)
 
         # Default parser for documents

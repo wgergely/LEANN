@@ -1,12 +1,12 @@
 """
 Unit tests for leann.analysis.CodeAnalyzer.
-Tests the core metadata extraction logic (imports, skeleton, main detection) 
+Tests the core metadata extraction logic (imports, skeleton, main detection)
 independent of the chunking mechanism.
 """
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -14,7 +14,7 @@ import pytest
 try:
     TEST_FILE_PATH = Path(__file__).resolve()
     LEANN_FORK_DIR = TEST_FILE_PATH.parent.parent
-    
+
     LEANN_CORE_SRC = LEANN_FORK_DIR / "packages" / "leann-core" / "src"
     ASTCHUNK_SRC = LEANN_FORK_DIR / "packages" / "astchunk-leann" / "src"
     APPS_DIR = LEANN_FORK_DIR / "apps"
@@ -30,7 +30,8 @@ sys.modules["leann_backend_hnsw"] = MagicMock()
 sys.modules["leann_backend_hnsw.convert_to_csr"] = MagicMock()
 sys.modules["leann_backend_faiss"] = MagicMock()
 
-from leann.analysis import CodeAnalyzer, TREE_SITTER_AVAILABLE
+from leann.analysis import TREE_SITTER_AVAILABLE, CodeAnalyzer  # noqa: E402
+
 
 @pytest.mark.skipif(not TREE_SITTER_AVAILABLE, reason="Tree-sitter not installed")
 class TestCodeAnalyzerPython:
@@ -49,7 +50,7 @@ import numpy as np
         """
         result = self.analyzer.analyze(code, "test.py")
         imports = result["imports"]
-        
+
         # Test basic presence
         assert "os" in imports
         assert "sys" in imports
@@ -69,11 +70,11 @@ if __name__ == "__main__":
     main()
 """
         code_lib = "def foo(): pass"
-        
+
         # Check analyze() integration
         res_main = self.analyzer.analyze(code_main, "script.py")
         assert res_main["is_main_module"] is True
-        
+
         res_lib = self.analyzer.analyze(code_lib, "lib.py")
         assert res_lib["is_main_module"] is False
 
@@ -89,7 +90,7 @@ class MyClass:
 """
         res = self.analyzer.analyze(code, "test.py")
         skeleton = res["skeleton"]
-        
+
         # If tree-sitter is available this should be populated
         # but locally it might be missing. The class skipif handles that.
         assert "def hello" in skeleton
@@ -101,7 +102,7 @@ class MyClass:
 @pytest.mark.skipif(not TREE_SITTER_AVAILABLE, reason="Tree-sitter not installed")
 class TestCodeAnalyzerTypeScript:
     """Test CodeAnalyzer with TypeScript code."""
-    
+
     def setup_method(self):
         self.analyzer = CodeAnalyzer("typescript")
 
@@ -114,11 +115,11 @@ import './styles.css';
 """
         result = self.analyzer.analyze(code, "App.tsx")
         imports = result["imports"]
-        
+
         # Logic captures 'source' string in import_statement
         assert "react" in imports
         assert "./styles.css" in imports
-        
+
         # Logic captures 'require' arguments
         assert "fs" in imports
 
@@ -136,6 +137,6 @@ function helper() {}
 """
         res = self.analyzer.analyze(code, "App.tsx")
         skeleton = res["skeleton"]
-        
+
         assert "interface Props" in skeleton
         assert "function helper" in skeleton

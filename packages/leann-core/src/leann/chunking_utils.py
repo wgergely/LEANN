@@ -4,7 +4,6 @@ Packaged within leann-core so installed wheels can import it reliably.
 """
 
 import logging
-import os
 from pathlib import Path
 from typing import Any, Optional
 
@@ -188,7 +187,8 @@ def create_ast_chunks(
         List of dicts with {"text": str, "metadata": dict}
     """
     try:
-        from leann.analysis import CodeAnalyzer, ASTCHUNK_AVAILABLE
+        from leann.analysis import ASTCHUNK_AVAILABLE, CodeAnalyzer
+
         if not ASTCHUNK_AVAILABLE:
             raise ImportError("astchunk not available via CodeAnalyzer")
     except ImportError as e:
@@ -197,7 +197,7 @@ def create_ast_chunks(
         return _traditional_chunks_as_dicts(documents, max_chunk_size, chunk_overlap)
 
     all_chunks = []
-    
+
     # Cache analyzers by language to avoid repeated re-initialization overhead
     analyzers = {}
 
@@ -212,21 +212,21 @@ def create_ast_chunks(
             # 1. Get or create analyzer for this language
             if language not in analyzers:
                 analyzers[language] = CodeAnalyzer(language)
-            
+
             analyzer = analyzers[language]
-            
+
             # 2. Get content and basic metadata
             code_content = doc.get_content()
             if not code_content or not code_content.strip():
                 continue
 
             file_path = doc.metadata.get("file_path", "") or doc.metadata.get("file_name", "")
-            
+
             # 3. Base metadata from document
             doc_metadata = {
                 "file_path": file_path,
                 "file_name": doc.metadata.get("file_name", ""),
-                "language": language
+                "language": language,
             }
             if "creation_date" in doc.metadata:
                 doc_metadata["creation_date"] = doc.metadata["creation_date"]
@@ -238,7 +238,7 @@ def create_ast_chunks(
             chunks = analyzer.get_semantic_chunks(
                 code=code_content,
                 file_path=file_path,
-                metadata=doc_metadata # Passed as repo-level metadata
+                metadata=doc_metadata,  # Passed as repo-level metadata
             )
 
             if chunks:
@@ -247,10 +247,14 @@ def create_ast_chunks(
             else:
                 # Fallback if analyzer returns empty (e.g. parse error) but content exists
                 logger.warning(f"AST analysis yielded no chunks for {file_path}, falling back.")
-                all_chunks.extend(_traditional_chunks_as_dicts([doc], max_chunk_size, chunk_overlap))
+                all_chunks.extend(
+                    _traditional_chunks_as_dicts([doc], max_chunk_size, chunk_overlap)
+                )
 
         except Exception as e:
-            logger.warning(f"AST chunking failed for {language} file {doc.metadata.get('file_path')}: {e}")
+            logger.warning(
+                f"AST chunking failed for {language} file {doc.metadata.get('file_path')}: {e}"
+            )
             logger.info("Falling back to traditional chunking")
             all_chunks.extend(_traditional_chunks_as_dicts([doc], max_chunk_size, chunk_overlap))
 

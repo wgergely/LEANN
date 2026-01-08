@@ -449,15 +449,18 @@ class LeannBuilder:
         with open(offset_file, "wb") as f:
             pickle.dump(offset_map, f)
         texts_to_embed = [c["text"] for c in self.chunks]
-        
+
         # Batch embedding computation to avoid OOM or ZMQ message size limits
         batch_size = 256
         embeddings_list = []
-        
+
         # Use tqdm if available
         try:
             from tqdm import tqdm
-            iterator = tqdm(range(0, len(texts_to_embed), batch_size), desc="Computing embeddings", unit="batch")
+
+            iterator = tqdm(
+                range(0, len(texts_to_embed), batch_size), desc="Computing embeddings", unit="batch"
+            )
         except ImportError:
             iterator = range(0, len(texts_to_embed), batch_size)
 
@@ -467,7 +470,7 @@ class LeannBuilder:
                 batch,
                 self.embedding_model,
                 self.embedding_mode,
-                use_server=False, # This seems to be set to False for builds? 
+                use_server=False,  # This seems to be set to False for builds?
                 # Wait, build_index sets use_server=False?
                 # Ah, existing code was use_server=False, implies local computation or managing server internally?
                 # compute_embeddings docstring says: "Use direct computation (for build_index)"
@@ -476,7 +479,7 @@ class LeannBuilder:
                 provider_options=self.embedding_options,
             )
             embeddings_list.append(batch_embeddings)
-            
+
         if embeddings_list:
             embeddings = np.vstack(embeddings_list)
         else:
@@ -729,17 +732,20 @@ class LeannBuilder:
             raise ValueError("No valid chunks to append.")
 
         texts_to_embed = [chunk["text"] for chunk in valid_chunks]
-        
+
         # Batch embedding computation
         batch_size = 256
         embeddings_list = []
-        
+
         try:
             from tqdm import tqdm
-            iterator = tqdm(range(0, len(texts_to_embed), batch_size), desc="Computing embeddings", unit="batch")
+
+            iterator = tqdm(
+                range(0, len(texts_to_embed), batch_size), desc="Computing embeddings", unit="batch"
+            )
         except ImportError:
             iterator = range(0, len(texts_to_embed), batch_size)
-            
+
         for i in iterator:
             batch = texts_to_embed[i : i + batch_size]
             batch_embeddings = compute_embeddings(
@@ -751,7 +757,7 @@ class LeannBuilder:
                 provider_options=self.embedding_options,
             )
             embeddings_list.append(batch_embeddings)
-            
+
         if embeddings_list:
             embeddings = np.vstack(embeddings_list)
         else:
@@ -1293,7 +1299,7 @@ class LeannChat:
             # Add line number range if available (from AST chunking or similar)
             if "start_line" in r.metadata and "end_line" in r.metadata:
                 source += f" (lines {r.metadata['start_line']}-{r.metadata['end_line']})"
-            
+
             context_parts.append(f"Source: {source}\nContent:\n{r.text}")
 
         context = "\n\n---\n\n".join(context_parts)

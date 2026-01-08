@@ -1,16 +1,15 @@
-
 import logging
-import os
 import re
 from pathlib import Path
-from typing import Any, List, Optional, Set, Tuple, Dict, Union
+from typing import Any, Optional
 
 # Use explicit imports matching astchunk to ensure compatibility
 try:
     import tree_sitter as ts
+    import tree_sitter_javascript as tsjavascript
     import tree_sitter_python as tspython
     import tree_sitter_typescript as tstypescript
-    import tree_sitter_javascript as tsjavascript
+
     # Java/C# optional
     try:
         import tree_sitter_java as tsjava
@@ -20,8 +19,9 @@ try:
         import tree_sitter_c_sharp as tscsharp
     except ImportError:
         tscsharp = None
-        
+
     from tree_sitter import Language, Parser, Query, QueryCursor
+
     TREE_SITTER_AVAILABLE = True
 except ImportError:
     TREE_SITTER_AVAILABLE = False
@@ -30,16 +30,18 @@ except ImportError:
 # Integration with astchunk (internal library)
 try:
     from astchunk import ASTChunkBuilder
+
     ASTCHUNK_AVAILABLE = True
 except ImportError:
     ASTCHUNK_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
+
 class CodeAnalyzer:
     """
     Analyzes source code to extract structural metadata and semantic chunks.
-    
+
     Refined Capabilities (v2):
     1. Static Module Resolution: Resolves `leann.analysis` from file paths.
     2. Concise Skeleton: Compact outline of classes/functions for LLM context.
@@ -50,7 +52,7 @@ class CodeAnalyzer:
     def __init__(self, language: str):
         """
         Initialize the analyzer for a specific language.
-        
+
         Args:
             language: "python", "javascript", "typescript", "tsx", "java", "c_sharp"
         """
@@ -66,27 +68,27 @@ class CodeAnalyzer:
             if language == "python":
                 self._language_obj = Language(tspython.language())
                 self.parser = Parser(self._language_obj)
-                
+
             elif language in ["javascript", "js", "jsx"]:
                 # Use JS parser preference
                 self._language_obj = Language(tsjavascript.language())
                 self.parser = Parser(self._language_obj)
-                
+
             elif language in ["typescript", "ts", "tsx"]:
                 self._language_obj = Language(tstypescript.language_tsx())
                 self.parser = Parser(self._language_obj)
-                
+
             elif language == "java" and tsjava:
                 self._language_obj = Language(tsjava.language())
                 self.parser = Parser(self._language_obj)
-                
+
             elif language == "csharp" and tscsharp:
                 self._language_obj = Language(tscsharp.language())
                 self.parser = Parser(self._language_obj)
-                
+
             else:
                 logger.warning(f"Unsupported or missing language binding: {language}")
-                
+
         except Exception as e:
             logger.error(f"Failed to initialize Tree-sitter for {language}: {e}", exc_info=True)
 
@@ -100,7 +102,7 @@ class CodeAnalyzer:
             "module_name": "",
             "is_script": False,
             "skeleton": "",
-            "context_block": ""
+            "context_block": "",
         }
 
         if not self.parser or not code.strip():
@@ -108,43 +110,45 @@ class CodeAnalyzer:
 
         try:
             tree = self.parser.parse(bytes(code, "utf8"))
-            
+
             # 1. Module Resolution
             result["module_name"] = self._resolve_module_name(file_path)
-            
+
             # 2. Script Detection
             result["is_script"] = self._is_script(tree, code)
-            
+
             # 3. Imports Extraction
             imports = self._extract_imports(tree, code)
             result["imports"] = imports
             result["five_paths"] = imports[:5]
-            
+
             # 4. Skeleton Generation
             result["skeleton"] = self._generate_concise_skeleton(tree, code)
-            
+
             # 5. Context Block Generation
             context_parts = []
             if result["module_name"]:
                 context_parts.append(f"Module: {result['module_name']}")
             elif result["is_script"]:
-                 context_parts.append("Type: Script / Entry Point")
-                 
+                context_parts.append("Type: Script / Entry Point")
+
             if result["five_paths"]:
                 context_parts.append("Imports: " + ", ".join(result["five_paths"]))
-                
+
             if result["skeleton"]:
                 context_parts.append(f"Skeleton:\n{result['skeleton']}")
-            
+
             if context_parts:
                 result["context_block"] = "\n".join(context_parts)
-                
+
         except Exception as e:
             logger.error(f"Error analyzing file {file_path}: {e}", exc_info=True)
-            
+
         return result
 
-    def get_semantic_chunks(self, code: str, file_path: str = "", metadata: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+    def get_semantic_chunks(
+        self, code: str, file_path: str = "", metadata: Optional[dict[str, Any]] = None
+    ) -> list[dict[str, Any]]:
         """
         Split code into semantic chunks using astchunk.
         Enriches chunks with global metadata context block.
@@ -164,13 +168,13 @@ class CodeAnalyzer:
             "typescript": "typescript",
             "ts": "typescript",
             "tsx": "typescript",
-            "js": "javascript", # Explicitly map js to javascript now that we have custom handling
+            "js": "javascript",  # Explicitly map js to javascript now that we have custom handling
             "javascript": "javascript",
-            "jsx": "javascript"
+            "jsx": "javascript",
         }
-        
+
         astchunk_lang = lang_map.get(self.language, self.language)
-        
+
         repo_metadata = metadata or {}
         repo_metadata.setdefault("filepath", file_path)
         repo_metadata.setdefault("file_path", file_path)
@@ -182,26 +186,26 @@ class CodeAnalyzer:
                 "metadata_template": "default",
                 "chunk_overlap": 64,
                 "repo_level_metadata": repo_metadata,
-                "chunk_expansion": True 
+                "chunk_expansion": True,
             }
-            
+
             chunk_builder = ASTChunkBuilder(**configs)
             chunks = chunk_builder.chunkify(code)
-            
+
             # Get Context Block
             global_analysis = self.analyze(code, file_path)
             context_header = global_analysis.get("context_block", "")
-            
+
             result_chunks = []
             for chunk in chunks:
                 chunk_text = ""
                 chunk_meta = {}
-                
+
                 if isinstance(chunk, dict):
                     chunk_text = chunk.get("content", chunk.get("text", ""))
                     chunk_meta = chunk.get("metadata", {})
-                else: 
-                     chunk_text = str(chunk)
+                else:
+                    chunk_text = str(chunk)
 
                 if context_header:
                     # Prepend Context Header
@@ -211,12 +215,9 @@ class CodeAnalyzer:
                 final_meta = {**repo_metadata, **chunk_meta}
                 # Also store raw analysis fields in metadata for advanced filtering
                 final_meta["module_name"] = global_analysis.get("module_name")
-                
-                result_chunks.append({
-                    "text": chunk_text,
-                    "metadata": final_meta
-                })
-                
+
+                result_chunks.append({"text": chunk_text, "metadata": final_meta})
+
             return result_chunks
 
         except Exception as e:
@@ -230,10 +231,10 @@ class CodeAnalyzer:
         """
         if not file_path:
             return ""
-            
+
         try:
             path = Path(file_path).resolve()
-            
+
             # Simple heuristic: crawl up until no __init__.py (for Python)
             # or until package.json (for TS/JS)
             if self.language == "python":
@@ -241,18 +242,18 @@ class CodeAnalyzer:
                 current = path.parent
                 parts.append(path.stem)
                 if path.name == "__init__.py":
-                    parts = [] # Parent dir is the module name
-                
+                    parts = []  # Parent dir is the module name
+
                 # Traverse up
                 while current.joinpath("__init__.py").exists():
                     parts.insert(0, current.name)
                     if current == current.parent:
-                        break # Prevent infinite loop at root
+                        break  # Prevent infinite loop at root
                     current = current.parent
-                
-                if len(parts) > 0 and parts[-1] != "__init__": 
+
+                if len(parts) > 0 and parts[-1] != "__init__":
                     return ".".join(parts)
-            
+
             elif self.language in ["typescript", "javascript", "ts", "js", "tsx", "jsx"]:
                 # Find package.json
                 current = path.parent
@@ -262,7 +263,7 @@ class CodeAnalyzer:
                         root = current
                         break
                     current = current.parent
-                
+
                 if root:
                     # Relative path from package root
                     rel = path.relative_to(root)
@@ -271,10 +272,10 @@ class CodeAnalyzer:
                     if mod.endswith("/index"):
                         mod = mod[:-6]
                     return mod
-                    
+
         except Exception:
-            pass # Fallback to empty if resolution fails
-            
+            pass  # Fallback to empty if resolution fails
+
         return ""
 
     def _is_script(self, tree, code: str) -> bool:
@@ -282,40 +283,45 @@ class CodeAnalyzer:
         # Check shebang
         if code.startswith("#!"):
             return True
-            
+
         # Python: Check for if __name__ == "__main__"
         if self.language == "python":
             if 'if __name__ == "__main__":' in code or "if __name__ == '__main__':" in code:
                 return True
-                
+
         return False
 
-    def _extract_imports(self, tree, code: str) -> List[str]:
+    def _extract_imports(self, tree, code: str) -> list[str]:
         """Extract import paths."""
         imports = []
         root_node = tree.root_node
-        
+
         if self.language == "python":
-            query = Query(self._language_obj, """
+            query = Query(
+                self._language_obj,
+                """
             (import_from_statement
                 module_name: (dotted_name) @module
             )
             (import_statement
                 name: (dotted_name) @module
             )
-            """)
+            """,
+            )
             cursor = QueryCursor(query)
             captures = cursor.captures(root_node)
             seen = set()
             # captures is dict: {"capture_name": [list of nodes]}
             for node in captures.get("module", []):
-                text = node.text.decode('utf8')
+                text = node.text.decode("utf8")
                 if text not in seen:
                     imports.append(text)
                     seen.add(text)
-                    
+
         elif self.language in ["javascript", "typescript", "tsx", "js", "ts", "jsx"]:
-            query = Query(self._language_obj, """
+            query = Query(
+                self._language_obj,
+                """
             (import_statement
                 source: (string) @source
             )
@@ -323,23 +329,24 @@ class CodeAnalyzer:
                 function: (identifier) @func
                 arguments: (arguments (string) @arg)
             )
-            """)
+            """,
+            )
             cursor = QueryCursor(query)
             captures = cursor.captures(root_node)
             seen = set()
             # Handle ES6 imports
             for node in captures.get("source", []):
-                text = node.text.decode('utf8').strip("'").strip('"')
+                text = node.text.decode("utf8").strip("'").strip('"')
                 if text not in seen:
                     imports.append(text)
                     seen.add(text)
             # Handle require() calls
             for node in captures.get("arg", []):
                 parent = node.parent.parent
-                if parent and parent.type == 'call_expression':
-                    func = parent.child_by_field_name('function')
-                    if func and func.text.decode('utf8') == 'require':
-                        text = node.text.decode('utf8').strip("'").strip('"')
+                if parent and parent.type == "call_expression":
+                    func = parent.child_by_field_name("function")
+                    if func and func.text.decode("utf8") == "require":
+                        text = node.text.decode("utf8").strip("'").strip('"')
                         if text not in seen:
                             imports.append(text)
                             seen.add(text)
@@ -349,34 +356,43 @@ class CodeAnalyzer:
         """Generate a COMPACT skeleton."""
         lines = []
         root_node = tree.root_node
-        
+
         # Python Query
         if self.language == "python":
-            query = Query(self._language_obj, """
+            query = Query(
+                self._language_obj,
+                """
             (function_definition) @func
             (class_definition) @class
-            """)
+            """,
+            )
         # JS Query (no interface_declaration)
         elif self.language in ["javascript", "js", "jsx"]:
-            query = Query(self._language_obj, """
+            query = Query(
+                self._language_obj,
+                """
             (function_declaration) @func
             (class_declaration) @class
             (method_definition) @method
-            """)
+            """,
+            )
         # TS Query (includes interface)
         elif self.language in ["typescript", "tsx", "ts"]:
-            query = Query(self._language_obj, """
+            query = Query(
+                self._language_obj,
+                """
             (function_declaration) @func
             (class_declaration) @class
             (interface_declaration) @interface
             (method_definition) @method
-            """)
+            """,
+            )
         else:
             return ""
 
         cursor = QueryCursor(query)
         captures = cursor.captures(root_node)
-        
+
         # Flatten all captured nodes with their type info
         all_nodes = []
         for capture_name, nodes in captures.items():
@@ -384,50 +400,50 @@ class CodeAnalyzer:
                 all_nodes.append((node, capture_name))
         # Sort by line number for consistent output
         all_nodes.sort(key=lambda x: x[0].start_point[0])
-        
-        for node, name in all_nodes:
+
+        for node, _name in all_nodes:
             start_line = node.start_point[0] + 1
             end_line = node.end_point[0] + 1
-            
+
             sig_text = ""
             doc_text = ""
-            
+
             if self.language == "python":
-                body = node.child_by_field_name('body')
+                body = node.child_by_field_name("body")
                 if body:
                     # Signature is everything before body
-                    sig_bytes = code.encode('utf8')[node.start_byte : body.start_byte]
-                    sig_text = sig_bytes.decode('utf8').strip().rstrip(':')
-                    
+                    sig_bytes = code.encode("utf8")[node.start_byte : body.start_byte]
+                    sig_text = sig_bytes.decode("utf8").strip().rstrip(":")
+
                     # Extract docstring
                     first_stmt = body.child(0)
-                    if first_stmt and first_stmt.type == 'expression_statement':
+                    if first_stmt and first_stmt.type == "expression_statement":
                         expr = first_stmt.child(0)
-                        if expr and expr.type == 'string':
-                            raw_doc = expr.text.decode('utf8').strip('\"\'')
+                        if expr and expr.type == "string":
+                            raw_doc = expr.text.decode("utf8").strip("\"'")
                             # Truncate to 1 line, max 80 chars
-                            cleaned_doc = re.sub(r'\s+', ' ', raw_doc).strip()
+                            cleaned_doc = re.sub(r"\s+", " ", raw_doc).strip()
                             if len(cleaned_doc) > 60:
                                 doc_text = cleaned_doc[:57] + "..."
                             else:
                                 doc_text = cleaned_doc
                 else:
-                    sig_text = node.text.decode('utf8').split('\n')[0]
+                    sig_text = node.text.decode("utf8").split("\n")[0]
 
             elif self.language in ["javascript", "typescript", "tsx", "js", "ts"]:
-                body = node.child_by_field_name('body')
+                body = node.child_by_field_name("body")
                 if body:
-                     sig_bytes = code.encode('utf8')[node.start_byte : body.start_byte]
-                     sig_text = sig_bytes.decode('utf8').strip().rstrip('{')
+                    sig_bytes = code.encode("utf8")[node.start_byte : body.start_byte]
+                    sig_text = sig_bytes.decode("utf8").strip().rstrip("{")
                 else:
-                     sig_text = node.text.decode('utf8').split('\n')[0].strip().rstrip('{')
+                    sig_text = node.text.decode("utf8").split("\n")[0].strip().rstrip("{")
 
             # Format: signature # L10-20
             line_entry = f"{sig_text}  # L{start_line}-{end_line}"
             lines.append(line_entry)
-            
+
             if doc_text:
-                lines.append(f"  \"\"\" {doc_text} \"\"\"")
-            
+                lines.append(f'  """ {doc_text} """')
+
         # Remove too many newlines, keep it compact
         return "\n".join(lines)

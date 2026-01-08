@@ -1,16 +1,15 @@
 """
 Tests for the FAISS backend implementation.
 """
-import logging
+
 import pickle
 import sys
 import tempfile
+import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
-import pytest
-import unittest
 
 # Add package paths to sys.path to allow imports
 # Assuming we are running from y:\code\leann-mcp\lib\leann-fork
@@ -45,7 +44,7 @@ except ImportError:
     np = MagicMock()
     sys.modules["numpy"] = np
 
-from leann_backend_faiss import FaissBackendBuilder, FaissBackendFactory, FaissBackendSearcher
+from leann_backend_faiss import FaissBackendBuilder, FaissBackendSearcher  # noqa: E402
 
 
 class TestFaissBackendBuilder(unittest.TestCase):
@@ -56,26 +55,26 @@ class TestFaissBackendBuilder(unittest.TestCase):
         """Test building a FAISS index on CPU."""
         # Setup mock
         mock_faiss.StandardGpuResources.side_effect = Exception("No GPU")
-        
+
         # Create mock index
         mock_index = Mock()
         mock_index.is_trained = False
         mock_index.ntotal = 10
         mock_faiss.IndexFlatIP.return_value = mock_index
-        
+
         # Test data - properly mock shape
         data = MagicMock()
         data.shape = (10, 128)
         data.dtype = np.float32
-        
+
         ids = [f"id_{i}" for i in range(10)]
-        
+
         with tempfile.TemporaryDirectory() as temp_dir:
             index_path = str(Path(temp_dir) / "test.index")
-            
+
             builder = FaissBackendBuilder()
             builder.build(data, ids, index_path)
-            
+
             # Verify interactions
             mock_faiss.IndexFlatIP.assert_called_with(128)
             mock_faiss.normalize_L2.assert_called_once()
@@ -89,13 +88,13 @@ class TestFaissBackendBuilder(unittest.TestCase):
         # Setup mock for GPU
         mock_res = Mock()
         mock_faiss.StandardGpuResources.return_value = mock_res
-        
+
         mock_index_gpu = Mock()
         mock_index_gpu.is_trained = False
         mock_index_gpu.ntotal = 100001
-        
+
         mock_index_cpu = Mock()
-        
+
         mock_faiss.index_factory.return_value = mock_index_cpu
         mock_faiss.index_cpu_to_gpu.return_value = mock_index_gpu
         mock_faiss.index_gpu_to_cpu.return_value = mock_index_cpu
@@ -107,23 +106,23 @@ class TestFaissBackendBuilder(unittest.TestCase):
         data.shape = data_shape
         data.dtype = np.float32
         data.__len__.return_value = 100001
-        
+
         ids = ["id"] * 100001
-        
+
         with tempfile.TemporaryDirectory() as temp_dir:
             index_path = str(Path(temp_dir) / "test.index")
-            
+
             builder = FaissBackendBuilder()
             builder.build(data, ids, index_path)
-            
+
             # Verify "IVF" path was chosen
             mock_faiss.index_factory.assert_called()
             args, _ = mock_faiss.index_factory.call_args
-            assert "IVF" in args[1] 
-            
+            assert "IVF" in args[1]
+
             # Verify GPU storage
             mock_faiss.index_cpu_to_gpu.assert_called()
-            
+
             # Verify save conversion
             mock_faiss.index_gpu_to_cpu.assert_called()
 
@@ -138,24 +137,24 @@ class TestFaissBackendSearcher(unittest.TestCase):
         mock_faiss.StandardGpuResources.side_effect = Exception("No GPU")
         mock_index = Mock()
         mock_faiss.read_index.return_value = mock_index
-        
+
         # Mock search results: distances, indices
         # 1 query, top_k=2
         # indices must be integer-like for list indexing to work if not mocking full array behavior
         # But we can just mock indices[i][j] to return an int
-        
+
         mock_distances = MagicMock()
         mock_distances.__getitem__.return_value.__getitem__.side_effect = [0.9, 0.8]
-        
+
         mock_indices = MagicMock()
         # when accessing [i][j], return 0 then 1
         mock_indices.__getitem__.return_value.__getitem__.side_effect = [0, 1]
-        
+
         mock_index.search.return_value = (mock_distances, mock_indices)
-        
+
         # Mock IDs file
         ids = ["doc1", "doc2", "doc3"]
-        
+
         with tempfile.TemporaryDirectory() as temp_dir:
             index_path = Path(temp_dir) / "test.index"
             # create dummy index file (content doesn't matter as we mock read_index)
@@ -163,16 +162,16 @@ class TestFaissBackendSearcher(unittest.TestCase):
             # create ids file
             with open(index_path.with_suffix(".ids.pkl"), "wb") as f:
                 pickle.dump(ids, f)
-            
+
             searcher = FaissBackendSearcher(str(index_path))
-            
+
             # query must have shape
             query = MagicMock()
             query.shape = (1, 128)
             query.dtype = np.float32
-            
+
             results = searcher.search(query, top_k=2)
-            
+
             assert len(results["labels"]) == 1
             assert len(results["labels"][0]) == 2
             assert results["labels"][0] == ["doc1", "doc2"]
@@ -184,17 +183,17 @@ class TestFaissBackendSearcher(unittest.TestCase):
         """Test that compute_query_embedding enforces use_server=False."""
         mock_faiss.StandardGpuResources.side_effect = Exception("No GPU")
         mock_faiss.read_index.return_value = Mock()
-        
+
         with tempfile.TemporaryDirectory() as temp_dir:
             index_path = Path(temp_dir) / "test.index"
             index_path.touch()
             with open(index_path.with_suffix(".ids.pkl"), "wb") as f:
                 pickle.dump([], f)
-                
+
             searcher = FaissBackendSearcher(str(index_path))
-            
+
             searcher.compute_query_embedding("test query")
-            
+
             # CRITICAL: Verify use_server is False
             mock_compute_embeddings.assert_called_once()
             call_kwargs = mock_compute_embeddings.call_args[1]
