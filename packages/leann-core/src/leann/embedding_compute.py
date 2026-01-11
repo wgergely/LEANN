@@ -17,7 +17,12 @@ import numpy as np
 import tiktoken
 import torch
 
-from .settings import resolve_ollama_host, resolve_openai_api_key, resolve_openai_base_url
+from .settings import (
+    resolve_ollama_host,
+    resolve_openai_api_key,
+    resolve_openai_base_url,
+    resolve_voyage_api_key,
+)
 
 # Set up logger with proper level
 logger = logging.getLogger(__name__)
@@ -42,6 +47,23 @@ EMBEDDING_MODEL_LIMITS = {
     "text-embedding-3-small": 8192,
     "text-embedding-3-large": 8192,
     "text-embedding-ada-002": 8192,
+    # Voyage AI models (Dec 2024) - 32K context for Late Chunking
+    "voyage-code-3": 32000,
+    "voyage-code-2": 16000,
+    "voyage-3": 32000,
+    "voyage-3-lite": 32000,
+    # Jina Code Embeddings (Sep 2025) - 79.04% CoIR
+    "jinaai/jina-code-embeddings-0.5b": 8192,
+    "jinaai/jina-code-embeddings-1.5b": 8192,
+    "jina-code-embeddings-0.5b": 8192,
+    "jina-code-embeddings-1.5b": 8192,
+    # Qodo-Embed-1 (Feb 2025) - 32K context
+    "Qodo/Qodo-Embed-1-1.5B": 32000,
+    "Qodo/Qodo-Embed-1-7B": 32000,
+    # SFR-Embedding-Code (Jan 2025) - Salesforce open-source
+    "Salesforce/SFR-Embedding-Code-400M": 8192,
+    "Salesforce/SFR-Embedding-Code-2B": 8192,
+    "Salesforce/SFR-Embedding-Code-7B": 8192,
 }
 
 # Runtime cache for dynamically discovered token limits
@@ -388,6 +410,14 @@ def compute_embeddings(
         )
     elif mode == "gemini":
         return compute_embeddings_gemini(texts, model_name, is_build=is_build)
+    elif mode == "voyage":
+        return compute_embeddings_voyage(
+            texts,
+            model_name,
+            is_build=is_build,
+            api_key=provider_options.get("api_key"),
+            provider_options=provider_options,
+        )
     else:
         raise ValueError(f"Unsupported embedding mode: {mode}")
 
@@ -474,24 +504,28 @@ def compute_embeddings_sentence_transformers(
             # Set allocator config to avoid fragmentation if not already set
             if "PYTORCH_ALLOC_CONF" not in os.environ:
                 os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
-                logger.info("Set PYTORCH_ALLOC_CONF=expandable_segments:True to reduce fragmentation")
+                logger.info(
+                    "Set PYTORCH_ALLOC_CONF=expandable_segments:True to reduce fragmentation"
+                )
 
             # TF32 allows for faster processing on Ampere+ GPUs
             torch.backends.cuda.matmul.allow_tf32 = True
             torch.backends.cudnn.allow_tf32 = True
             torch.backends.cudnn.benchmark = True
             torch.backends.cudnn.deterministic = False
-            
+
             # Reduce memory fraction to leave room for other processes (e.g., search server)
             # 0.7 is a safer default than 0.9 in multi-service environments
             mem_fraction = float(os.getenv("LEANN_GPU_MEM_FRACTION", "0.7"))
             torch.cuda.set_per_process_memory_fraction(mem_fraction)
             torch.cuda.empty_cache()
-            
+
             # Log current utilization
             allocated = torch.cuda.memory_allocated(0) / 1024**3
             reserved = torch.cuda.memory_reserved(0) / 1024**3
-            logger.info(f"GPU Memory (vram): Allocated: {allocated:.2f}GB | Reserved: {reserved:.2f}GB | Quota: {mem_fraction*100:.0f}%")
+            logger.info(
+                f"GPU Memory (vram): Allocated: {allocated:.2f}GB | Reserved: {reserved:.2f}GB | Quota: {mem_fraction * 100:.0f}%"
+            )
         elif device == "mps":
             try:
                 if hasattr(torch.mps, "set_per_process_memory_fraction"):
@@ -868,6 +902,145 @@ def compute_embeddings_openai(
     embeddings = np.array(all_embeddings, dtype=np.float32)
     logger.info(f"Generated {len(embeddings)} embeddings, dimension: {embeddings.shape[1]}")
     print(f"len of embeddings: {len(embeddings)}")
+    return embeddings
+
+
+def compute_embeddings_voyage(
+    texts: list[str],
+    model_name: str,
+    is_build: bool = False,
+    api_key: Optional[str] = None,
+    provider_options: Optional[dict[str, Any]] = None,
+) -> np.ndarray:
+    """Compute embeddings using Voyage AI API.
+
+    Voyage Code 3 provides state-of-the-art code retrieval with 32K context
+    and Matryoshka dimension support (2048/1024/512/256).
+
+    Args:
+        texts: List of texts to compute embeddings for
+        model_name: Voyage model name (e.g., 'voyage-code-3')
+        is_build: Whether this is a build operation (shows progress bar)
+        api_key: Optional API key (falls back to VOYAGE_API_KEY env var)
+        provider_options: Optional provider-specific options including:
+            - output_dimension: Matryoshka dimension (2048, 1024, 512, 256)
+            - input_type: 'query' or 'document' (affects embedding)
+            - truncation: Whether to truncate long inputs (default True)
+
+    Returns:
+        Normalized embeddings array, shape: (len(texts), embedding_dim)
+
+    Raises:
+        ImportError: If voyageai package is not installed
+        RuntimeError: If VOYAGE_API_KEY is not set
+    """
+    try:
+        import voyageai
+    except ImportError as e:
+        raise ImportError(
+            "voyageai package not installed. Install with: pip install voyageai"
+        ) from e
+
+    # Validate input
+    if not texts:
+        raise ValueError("Cannot compute embeddings for empty text list")
+
+    # Filter empty/whitespace texts
+    invalid_count = sum(1 for t in texts if not isinstance(t, str) or not t.strip())
+    if invalid_count > 0:
+        raise ValueError(
+            f"Found {invalid_count} empty/invalid text(s) in input. "
+            "Upstream should filter before calling Voyage."
+        )
+
+    # Resolve API key
+    provider_options = provider_options or {}
+    effective_api_key = api_key or provider_options.get("api_key")
+    resolved_api_key = resolve_voyage_api_key(effective_api_key)
+
+    if not resolved_api_key:
+        raise RuntimeError(
+            "VOYAGE_API_KEY environment variable not set. "
+            "Get your API key from https://dash.voyageai.com/"
+        )
+
+    # Initialize Voyage client
+    client = voyageai.Client(api_key=resolved_api_key)
+
+    logger.info(
+        f"Computing embeddings for {len(texts)} texts using Voyage AI, model: '{model_name}'"
+    )
+
+    # Extract provider options
+    output_dimension = provider_options.get("output_dimension")  # Matryoshka dims
+    input_type = provider_options.get("input_type", "document")  # 'query' or 'document'
+    truncation = provider_options.get("truncation", True)
+
+    # Apply token limit truncation
+    token_limit = get_model_token_limit(model_name)
+    logger.info(f"Using token limit: {token_limit} for model '{model_name}'")
+    texts = truncate_to_token_limit(texts, token_limit)
+
+    # Voyage batch limits: 128 texts or 120K tokens per request
+    # Use conservative batch size for safety
+    max_batch_size = 64
+    all_embeddings = []
+
+    # Progress bar for build operations
+    try:
+        from tqdm import tqdm
+
+        total_batches = (len(texts) + max_batch_size - 1) // max_batch_size
+        batch_range = range(0, len(texts), max_batch_size)
+        batch_iterator = tqdm(
+            batch_range,
+            desc=f"Voyage {model_name}",
+            unit="batch",
+            total=total_batches,
+            disable=not is_build,
+        )
+    except ImportError:
+        batch_iterator = range(0, len(texts), max_batch_size)
+
+    for i in batch_iterator:
+        batch_texts = texts[i : i + max_batch_size]
+
+        try:
+            # Build embedding request kwargs
+            embed_kwargs = {
+                "texts": batch_texts,
+                "model": model_name,
+                "input_type": input_type,
+                "truncation": truncation,
+            }
+
+            # Add optional Matryoshka dimension
+            if output_dimension:
+                embed_kwargs["output_dimension"] = output_dimension
+
+            # Call Voyage API
+            result = client.embed(**embed_kwargs)
+            batch_embeddings = result.embeddings
+
+            # Verify batch size
+            if len(batch_embeddings) != len(batch_texts):
+                logger.warning(
+                    f"Expected {len(batch_texts)} embeddings but got {len(batch_embeddings)}"
+                )
+
+            all_embeddings.extend(batch_embeddings[: len(batch_texts)])
+
+        except Exception as e:
+            logger.error(f"Voyage batch {i} failed: {e}")
+            raise
+
+    embeddings = np.array(all_embeddings, dtype=np.float32)
+    logger.info(f"Generated {len(embeddings)} embeddings, dimension: {embeddings.shape[1]}")
+
+    # Validate results
+    if np.isnan(embeddings).any() or np.isinf(embeddings).any():
+        raise RuntimeError(f"Detected NaN or Inf values in embeddings, model: {model_name}")
+
     return embeddings
 
 

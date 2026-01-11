@@ -176,7 +176,7 @@ Examples:
             "--embedding-mode",
             type=str,
             default="sentence-transformers",
-            choices=["sentence-transformers", "openai", "mlx", "ollama"],
+            choices=["sentence-transformers", "openai", "mlx", "ollama", "voyage", "gemini"],
             help="Embedding backend mode (default: sentence-transformers)",
         )
         build_parser.add_argument(
@@ -1346,7 +1346,9 @@ Examples:
         # This ensures consistent metadata (e.g. src/server.py) instead of absolute paths.
         if directories:
             # Sort directories by length (descending) to match longest prefix first
-            sorted_dirs = sorted([Path(d).resolve() for d in directories], key=lambda p: len(str(p)), reverse=True)
+            sorted_dirs = sorted(
+                [Path(d).resolve() for d in directories], key=lambda p: len(str(p)), reverse=True
+            )
             for doc in documents:
                 fpath = doc.metadata.get("file_path") or doc.metadata.get("source")
                 if fpath:

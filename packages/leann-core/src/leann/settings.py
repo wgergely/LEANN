@@ -88,6 +88,21 @@ def resolve_anthropic_api_key(explicit: str | None = None) -> str | None:
     return os.getenv("ANTHROPIC_API_KEY")
 
 
+def resolve_voyage_api_key(explicit: str | None = None) -> str | None:
+    """Resolve the API key for Voyage AI services.
+
+    Args:
+        explicit: Explicitly provided API key (takes precedence)
+
+    Returns:
+        API key string or None if not found
+    """
+    if explicit:
+        return explicit
+
+    return os.getenv("VOYAGE_API_KEY")
+
+
 def encode_provider_options(options: dict[str, Any] | None) -> str | None:
     """Serialize provider options for child processes."""
 

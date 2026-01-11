@@ -13,9 +13,20 @@ if platform.system() == "Darwin":
         os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "0"
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-from .api import LeannBuilder, LeannChat, LeannSearcher
+try:
+    from .api import LeannBuilder, LeannChat, LeannSearcher
+except ImportError as e:
+    # Allow leann to be imported even if backends are missing
+    # (useful for standalone analysis or CLI tools)
+    LeannBuilder = None
+    LeannChat = None
+    LeannSearcher = None
+
 from .registry import BACKEND_REGISTRY, autodiscover_backends
 
-autodiscover_backends()
+try:
+    autodiscover_backends()
+except Exception:
+    pass
 
 __all__ = ["BACKEND_REGISTRY", "LeannBuilder", "LeannChat", "LeannSearcher"]
