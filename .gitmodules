@@ -14,6 +14,3 @@
 [submodule "packages/leann-backend-hnsw/third_party/libzmq"]
 	path = packages/leann-backend-hnsw/third_party/libzmq
 	url = https://github.com/zeromq/libzmq.git
-[submodule "packages/astchunk-leann"]
-	path = packages/astchunk-leann
-	url = https://github.com/yichuan-w/astchunk-leann.git
