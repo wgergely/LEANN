@@ -94,17 +94,17 @@ def preprocess_nws_count(bstring: bytes) -> np.ndarray:
     # Optimized vectorized implementation
     # 1. Convert bytes to int array (uint8)
     byte_arr = np.frombuffer(bstring, dtype=np.uint8)
-    
+
     # 2. Define whitespace codes (vectorized)
     whitespace_bytes = [ord(x) for x in string.whitespace]
-    
+
     # 3. Create boolean mask (True where NOT whitespace)
     # np.isin is faster than list comprehension for large arrays
     is_nws = ~np.isin(byte_arr, whitespace_bytes)
-    
+
     # 4. Integrate
     is_nws_cumsum = np.cumsum(is_nws, dtype=np.int64)
-    
+
     # 5. Prepend 0 for exclusive range calc
     nws_cumsum = np.concatenate([[0], is_nws_cumsum])
     return nws_cumsum

@@ -15,7 +15,7 @@ if platform.system() == "Darwin":
 
 try:
     from .api import LeannBuilder, LeannChat, LeannSearcher
-except ImportError as e:
+except ImportError:
     # Allow leann to be imported even if backends are missing
     # (useful for standalone analysis or CLI tools)
     LeannBuilder = None

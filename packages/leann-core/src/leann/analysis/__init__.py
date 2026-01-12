@@ -37,7 +37,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-from .providers import get_provider
+from .providers import get_provider  # noqa: E402
 
 
 class CodeAnalyzer:
@@ -219,13 +219,17 @@ class CodeAnalyzer:
                     search_root = path_obj.parent
                     found_root = None
                     for _ in range(7):
-                        if (search_root / ".leann").exists() or (search_root / ".git").exists() or (search_root / "tach.toml").exists():
+                        if (
+                            (search_root / ".leann").exists()
+                            or (search_root / ".git").exists()
+                            or (search_root / "tach.toml").exists()
+                        ):
                             found_root = search_root
                             break
                         if search_root.parent == search_root:
                             break
                         search_root = search_root.parent
-                    
+
                     if found_root:
                         provider = get_provider(self.language, found_root)
                         if provider:
@@ -259,7 +263,9 @@ class CodeAnalyzer:
                 if provider_data.get("dependents"):
                     context_parts.append(f"Dependents Count: {len(provider_data['dependents'])}")
                 if provider_data.get("closure"):
-                    context_parts.append(f"Transitive Closure: {len(provider_data['closure'])} files")
+                    context_parts.append(
+                        f"Transitive Closure: {len(provider_data['closure'])} files"
+                    )
 
             if context_parts:
                 result["context_block"] = "\n".join(context_parts)
@@ -344,10 +350,10 @@ class CodeAnalyzer:
                 final_meta["imports"] = global_analysis.get("imports", [])
                 final_meta["resolved_imports"] = global_analysis.get("resolved_imports", {})
                 final_meta["skeleton"] = global_analysis.get("skeleton", "")
-                
+
                 # Add provider data to metadata
                 if "provider_data" in global_analysis:
-                    final_meta["analysis_provider"] = "tach" # for now
+                    final_meta["analysis_provider"] = "tach"  # for now
                     final_meta.update(global_analysis["provider_data"])
 
                 result_chunks.append({"text": chunk_text, "metadata": final_meta})

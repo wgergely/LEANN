@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Any
+
 
 class BaseAnalysisProvider(ABC):
     """
@@ -17,7 +18,7 @@ class BaseAnalysisProvider(ABC):
         pass
 
     @abstractmethod
-    def get_file_context(self, abs_file_path: Path) -> Dict[str, Any]:
+    def get_file_context(self, abs_file_path: Path) -> dict[str, Any]:
         """
         Return rich dependency metadata for a specific file.
         Expected keys: 'dependencies', 'dependents', 'closure', 'external', etc.
@@ -25,7 +26,7 @@ class BaseAnalysisProvider(ABC):
         pass
 
     @abstractmethod
-    def get_project_summary(self) -> Dict[str, Any]:
+    def get_project_summary(self) -> dict[str, Any]:
         """
         Return a high-level summary of the project's structure/health.
         """

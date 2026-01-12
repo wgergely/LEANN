@@ -34,9 +34,9 @@ class ASTChunkBuilder:
         self.max_chunk_size: int = configs["max_chunk_size"]
         self.language: str = configs["language"]
         self.metadata_template: str = configs["metadata_template"]
-        
+
         # Optimization: Accept pre-initialized parser to avoid expensive re-creation
-        if "parser" in configs and configs["parser"]:
+        if configs.get("parser"):
             self.parser = configs["parser"]
             return
 
