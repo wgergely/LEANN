@@ -1,16 +1,16 @@
 import atexit
-import json
 import hashlib
+import json
 import logging
 import os
-import signal
 import socket
 import subprocess
 import sys
 import time
-import requests
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
+
+import requests
 
 from .settings import encode_provider_options
 
@@ -247,11 +247,11 @@ class EmbeddingServerManager:
                         json.dumps(config_signature, sort_keys=True, default=str).encode()
                     ).hexdigest(),
                 }
-                
+
                 resp = requests.post(f"{service_manager_url}/start", json=payload, timeout=30)
                 resp.raise_for_status()
                 data = resp.json()
-                
+
                 self.server_port = data["port"]
                 self._server_host = data.get("host", "localhost")
                 self._server_config = config_signature
@@ -512,9 +512,7 @@ class EmbeddingServerManager:
         # The service manager handles lifecycle with idle timeouts.
         # We only clear local state - the server stays running for reuse.
         if self.server_port and not self.server_process and service_manager_url:
-            logger.debug(
-                f"Remote service manager handles lifecycle - clearing local state only"
-            )
+            logger.debug("Remote service manager handles lifecycle - clearing local state only")
             self.server_port = None
             self._server_host = "localhost"
             self._server_config = None

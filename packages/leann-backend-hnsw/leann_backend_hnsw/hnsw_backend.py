@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_metric_map():
-    from . import faiss  # type: ignore
+    import faiss  # type: ignore
 
     return {
         "mips": faiss.METRIC_INNER_PRODUCT,
@@ -64,7 +64,7 @@ class HNSWBuilder(LeannBackendBuilderInterface):
             self.build_params["is_compact"] = False
 
     def build(self, data: np.ndarray, ids: list[str], index_path: str, **kwargs):
-        from . import faiss  # type: ignore
+        import faiss  # type: ignore
 
         path = Path(index_path)
         index_dir = path.parent
@@ -135,7 +135,7 @@ class HNSWSearcher(BaseSearcher):
             backend_module_name="leann_backend_hnsw.hnsw_embedding_server",
             **kwargs,
         )
-        from . import faiss  # type: ignore
+        import faiss  # type: ignore
 
         self.distance_metric = (
             self.meta.get("backend_kwargs", {}).get("distance_metric", "mips").lower()
@@ -205,7 +205,7 @@ class HNSWSearcher(BaseSearcher):
         Returns:
             Dict with 'labels' (list of lists) and 'distances' (ndarray)
         """
-        from . import faiss  # type: ignore
+        import faiss  # type: ignore
 
         if not recompute_embeddings and self.is_pruned:
             raise RuntimeError(

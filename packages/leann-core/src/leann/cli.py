@@ -1803,6 +1803,11 @@ Examples:
         # Default is to suppress (quiet mode), unless --verbose is specified
         suppress = not getattr(args, "verbose", False)
 
+        if not suppress:
+            import logging
+
+            logging.getLogger().setLevel(logging.INFO)
+
         if args.command == "list":
             self.list_indexes()
         elif args.command == "remove":

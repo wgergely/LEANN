@@ -766,7 +766,7 @@ class LeannBuilder:
                 f"Dimension mismatch during update: existing index uses {expected_dim}, got {embedding_dim}."
             )
 
-        from leann_backend_hnsw import faiss  # type: ignore
+        import faiss  # type: ignore
 
         embeddings = np.ascontiguousarray(embeddings, dtype=np.float32)
         if distance_metric == "cosine":

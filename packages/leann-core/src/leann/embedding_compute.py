@@ -173,7 +173,7 @@ def truncate_to_token_limit(texts: list[str], token_limit: int) -> list[str]:
     def process_text(idx_text):
         idx, text = idx_text
         # Re-get encoder inside thread if needed, but cl100k_base is cached by tiktoken
-        tokens = enc.encode(text)
+        tokens = enc.encode(text, disallowed_special=())
         original_length = len(tokens)
 
         if original_length <= token_limit:
@@ -452,6 +452,11 @@ def compute_embeddings_sentence_transformers(
         f"Computing embeddings for {len(texts)} texts using SentenceTransformer, model: '{model_name}'"
     )
 
+    # Force FP32 for jina-code/Qodo to avoid NaNs
+    if "jina-code" in model_name or "Qodo" in model_name:
+        logger.info(f"Forcing FP32 for {model_name} to prevent NaN/Inf values")
+        use_fp16 = False
+
     # Auto-detect device
     if device == "auto":
         # Check environment variable first
@@ -484,6 +489,10 @@ def compute_embeddings_sentence_transformers(
                 batch_size = 32
         elif device == "cuda":
             batch_size = 256  # Back to full speed, now safe due to metadata thinning
+            if "Qodo" in model_name:
+                # 32k context length requires smaller batches to avoid OOM
+                # 4 caused OOM, reducing to 1 for maximum stability
+                batch_size = 1
         # Keep original batch_size for CPU
 
     # Create cache key
@@ -502,10 +511,10 @@ def compute_embeddings_sentence_transformers(
         # Apply hardware optimizations
         if device == "cuda":
             # Set allocator config to avoid fragmentation if not already set
-            if "PYTORCH_ALLOC_CONF" not in os.environ:
-                os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
+            if "PYTORCH_CUDA_ALLOC_CONF" not in os.environ:
+                os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
                 logger.info(
-                    "Set PYTORCH_ALLOC_CONF=expandable_segments:True to reduce fragmentation"
+                    "Set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to reduce fragmentation"
                 )
 
             # TF32 allows for faster processing on Ampere+ GPUs
@@ -515,8 +524,8 @@ def compute_embeddings_sentence_transformers(
             torch.backends.cudnn.deterministic = False
 
             # Reduce memory fraction to leave room for other processes (e.g., search server)
-            # 0.7 is a safer default than 0.9 in multi-service environments
-            mem_fraction = float(os.getenv("LEANN_GPU_MEM_FRACTION", "0.7"))
+            # 0.9 is safer for large models like Qodo
+            mem_fraction = float(os.getenv("LEANN_GPU_MEM_FRACTION", "0.9"))
             torch.cuda.set_per_process_memory_fraction(mem_fraction)
             torch.cuda.empty_cache()
 
@@ -547,7 +556,7 @@ def compute_embeddings_sentence_transformers(
             "torch_dtype": torch.float16 if use_fp16 else torch.float32,
             "low_cpu_mem_usage": True,
             "_fast_init": True,
-            "attn_implementation": "eager",  # Use eager attention for speed
+            "attn_implementation": "sdpa",  # Use SDPA for better memory efficiency on long sequences
             "trust_remote_code": True,  # Required for nomic-embed-text and similar models
         }
 

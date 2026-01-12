@@ -25,9 +25,8 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "openai>=1.0.0",
     "huggingface-hub>=0.20.0",
-    # Keep transformers below 4.46: 4.46.0 adds Python 3.10-only return type syntax and
-    # breaks Python 3.9 environments.
-    "transformers>=4.30.0,<4.46",
+    # Relaxed for Docker (Py3.11) to support Qwen2.5 VL and Jina v4
+    "transformers>=4.49.0",
     "requests>=2.25.0",
     "accelerate>=0.20.0",
     "PyPDF2>=3.0.0",

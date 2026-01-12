@@ -478,7 +478,7 @@ if __name__ == "__main__":
         "--embedding-mode",
         type=str,
         default="sentence-transformers",
-        choices=["sentence-transformers", "openai", "mlx", "ollama"],
+        choices=["sentence-transformers", "openai", "mlx", "ollama", "voyage", "gemini", "cohere"],
         help="Embedding backend mode",
     )
 

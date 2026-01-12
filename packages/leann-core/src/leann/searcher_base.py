@@ -1,7 +1,7 @@
 import json
+import threading
 from abc import ABC, abstractmethod
 from pathlib import Path
-import threading
 from typing import Any, Literal, Optional
 
 import numpy as np
@@ -175,7 +175,9 @@ class BaseSearcher(LeannBackendSearcherInterface, ABC):
         except Exception as e:
             print(f"Error closing ZMQ socket: {e}")
 
-    def _compute_embedding_via_server(self, chunks: list, zmq_host: str, zmq_port: int) -> np.ndarray:
+    def _compute_embedding_via_server(
+        self, chunks: list, zmq_host: str, zmq_port: int
+    ) -> np.ndarray:
         """Compute embeddings using the ZMQ embedding server with persistent connection."""
         import msgpack
         import zmq
@@ -189,10 +191,10 @@ class BaseSearcher(LeannBackendSearcherInterface, ABC):
             ):
                 if self._zmq_socket:
                     self._zmq_socket.close()
-                
+
                 if self._zmq_context is None:
                     self._zmq_context = zmq.Context()
-                
+
                 self._zmq_socket = self._zmq_context.socket(zmq.REQ)
                 self._zmq_socket.setsockopt(zmq.RCVTIMEO, 30000)  # 30 second timeout
                 self._zmq_socket.setsockopt(zmq.LINGER, 0)

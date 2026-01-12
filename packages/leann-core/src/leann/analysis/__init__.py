@@ -311,6 +311,8 @@ class CodeAnalyzer:
                 "chunk_overlap": 64,
                 "repo_level_metadata": repo_metadata,
                 "chunk_expansion": True,
+                # Optimization: Pass pre-initialized parser
+                "parser": self.parser,
             }
 
             chunk_builder = ASTChunkBuilder(**configs)
